@@ -154,6 +154,8 @@ check_shm_extension(void)
 	if (reply->shared_pixmaps == 0) {
 		die("shm extension doesn't support shared pixmaps");
 	}
+
+	free(reply);
 }
 
 static void
