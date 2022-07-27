@@ -186,7 +186,6 @@ create_window(void)
 
 	memset(pixels, 255, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(uint32_t));
 	xcb_shm_attach(conn, shmseg, shmid, 0);
-	shmctl(shmid, IPC_RMID, NULL);
 
 	xcb_create_window(
 		conn, screen->root_depth, window, screen->root, 0, 0,
@@ -237,6 +236,7 @@ create_window(void)
 static void
 destroy_window(void)
 {
+	shmctl(shmid, IPC_RMID, NULL);
 	xcb_shm_detach(conn, shmseg);
 	shmdt(pixels);
 	xcb_free_gc(conn, gc);
