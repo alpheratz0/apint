@@ -146,8 +146,9 @@ check_shm_extension(void)
 	cookie = xcb_shm_query_version(conn);
 	reply = xcb_shm_query_version_reply(conn, cookie, &error);
 
-	if (NULL == reply) {
-		die("shm extension not found");
+	if (NULL != error) {
+		dief("xcb_shm_query_version failed with error code: %d",
+				(int)(error->error_code));
 	}
 
 	if (reply->shared_pixmaps == 0) {
