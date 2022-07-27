@@ -180,11 +180,11 @@ create_window(void)
 		IPC_CREAT | 0600
 	);
 
-	pixels = (uint32_t *)(shmat(shmid, 0, 0));
+	pixels = (uint32_t *)(shmat(shmid, NULL, 0));
 
 	memset(pixels, 255, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(uint32_t));
 	xcb_shm_attach(conn, shmseg, shmid, 0);
-	shmctl(shmid, IPC_RMID, 0);
+	shmctl(shmid, IPC_RMID, NULL);
 
 	xcb_create_window(
 		conn, screen->root_depth, window, screen->root, 0, 0,
