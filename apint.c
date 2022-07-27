@@ -50,7 +50,7 @@ static xcb_connection_t *conn;
 static xcb_window_t window;
 static xcb_screen_t *screen;
 static xcb_gcontext_t gc;
-static uint32_t shmseg;
+static xcb_shm_seg_t shmseg;
 static uint32_t shmid;
 static xcb_pixmap_t pixmap;
 static uint32_t *pixels;
