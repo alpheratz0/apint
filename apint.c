@@ -177,7 +177,7 @@ create_window(void)
 
 	shmid = shmget(
 		IPC_PRIVATE, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(uint32_t),
-		IPC_CREAT | 0777
+		IPC_CREAT | 0600
 	);
 
 	pixels = (uint32_t *)(shmat(shmid, 0, 0));
