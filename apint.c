@@ -173,6 +173,19 @@ create_window(void)
 	pixmap = xcb_generate_id(conn);
 	gc = xcb_generate_id(conn);
 
+	check_shm_extension();
+
+	shmid = shmget(
+		IPC_PRIVATE, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(uint32_t),
+		IPC_CREAT | 0777
+	);
+
+	pixels = (uint32_t *)(shmat(shmid, 0, 0));
+
+	memset(pixels, 255, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(uint32_t));
+	xcb_shm_attach(conn, shmseg, shmid, 0);
+	shmctl(shmid, IPC_RMID, 0);
+
 	xcb_create_window(
 		conn, screen->root_depth, window, screen->root, 0, 0,
 		CANVAS_WIDTH, CANVAS_HEIGHT, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
@@ -210,26 +223,13 @@ create_window(void)
 
 	xcb_create_gc(conn, gc, window, 0, 0);
 
-	xcb_map_window(conn, window);
-	xcb_flush(conn);
-
-	check_shm_extension();
-
-	shmid = shmget(
-		IPC_PRIVATE, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(uint32_t),
-		IPC_CREAT | 0777
-	);
-
-	pixels = (uint32_t *)(shmat(shmid, 0, 0));
-
-	memset(pixels, 255, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(uint32_t));
-	xcb_shm_attach(conn, shmseg, shmid, 0);
-	shmctl(shmid, IPC_RMID, 0);
-
 	xcb_shm_create_pixmap(
 		conn, pixmap, window, CANVAS_WIDTH, CANVAS_HEIGHT,
 		screen->root_depth, shmseg, 0
 	);
+
+	xcb_map_window(conn, window);
+	xcb_flush(conn);
 }
 
 static void
