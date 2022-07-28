@@ -442,7 +442,7 @@ main(int argc, char **argv)
 
 	create_window();
 
-	while((ev = xcb_wait_for_event(conn))) {
+	while ((ev = xcb_wait_for_event(conn))) {
 		switch (ev->response_type & ~0x80) {
 			case XCB_CLIENT_MESSAGE:
 				h_client_message((xcb_client_message_event_t *)(ev));
