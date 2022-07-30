@@ -53,6 +53,11 @@ enum {
 	DRAWMODE_ERASE
 };
 
+enum {
+	STARTUPMODE_WINDOWED,
+	STARTUPMODE_FULLSCREEN
+};
+
 struct brush {
 	uint32_t color;
 	int size;
@@ -68,6 +73,7 @@ static xcb_pixmap_t pixmap;
 static int canvas_width, canvas_height;
 static uint32_t *pixels;
 static uint8_t drawmode;
+static uint8_t startupmode;
 
 static const uint32_t palette[8] = {
 	0xff0000, 0x00ff00, 0x0000ff, 0xffff00,
@@ -220,6 +226,14 @@ create_window(void)
 		xatom("WM_PROTOCOLS"), XCB_ATOM_ATOM, 32, 1,
 		(const xcb_atom_t[]) { xatom("WM_DELETE_WINDOW") }
 	);
+
+	if (startupmode == STARTUPMODE_FULLSCREEN) {
+		xcb_change_property(
+			conn, XCB_PROP_MODE_REPLACE, window,
+			xatom("_NET_WM_STATE"), XCB_ATOM_ATOM, 32, 1,
+			(const xcb_atom_t[]) { xatom("_NET_WM_STATE_FULLSCREEN") }
+		);
+	}
 
 	xcb_create_gc(conn, gc, window, 0, 0);
 
@@ -377,8 +391,9 @@ print_opt(const char *sh, const char *lo, const char *desc)
 static void
 usage(void)
 {
-	puts("Usage: apint [ -hv ] [ -l FILE ]");
+	puts("Usage: apint [ -fhv ] [ -l FILE ]");
 	puts("Options are:");
+	print_opt("-f", "--fullscreen", "start in fullscreen mode");
 	print_opt("-h", "--help", "display this message and exit");
 	print_opt("-v", "--version", "display the program version");
 	print_opt("-l", "--load", "load ppm image");
@@ -476,9 +491,10 @@ main(int argc, char **argv)
 	const char *loadpath = NULL;
 	xcb_generic_event_t *ev;
 
-	if (++argv, --argc > 0) {
+	while (++argv, --argc > 0) {
 		if (match_opt(*argv, "-h", "--help")) usage();
 		else if (match_opt(*argv, "-v", "--version")) version();
+		else if (match_opt(*argv, "-f", "--fullscreen")) startupmode = STARTUPMODE_FULLSCREEN;
 		else if (match_opt(*argv, "-l", "--load") && --argc > 0) loadpath = *++argv;
 		else if (**argv == '-') dief("invalid option %s", *argv);
 		else dief("unexpected argument: %s", *argv);
