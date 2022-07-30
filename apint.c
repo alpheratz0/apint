@@ -227,6 +227,13 @@ create_window(void)
 		(const xcb_atom_t[]) { xatom("WM_DELETE_WINDOW") }
 	);
 
+	/* remove any transparency */
+	xcb_change_property(
+		conn, XCB_PROP_MODE_REPLACE, window,
+		xatom("_NET_WM_WINDOW_OPACITY"), XCB_ATOM_CARDINAL, 32, 1,
+		(const uint8_t[]) { 0xff, 0xff, 0xff, 0xff }
+	);
+
 	if (startupmode == STARTUPMODE_FULLSCREEN) {
 		xcb_change_property(
 			conn, XCB_PROP_MODE_REPLACE, window,
