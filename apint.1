@@ -16,6 +16,10 @@ display the program version
 .TP
 \fB\-l\fR, \fB\-\-load\fR
 load ppm image
+.SH EXAMPLES
+.TP
+\fBdraw over a screenshot\fR
+apint -f -l $(xscreenshot -p -d $(mktemp -d))
 .SH EXIT STATUS
 .TP
 \fB0\fR
