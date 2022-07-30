@@ -26,6 +26,7 @@
 
 */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -43,8 +44,8 @@
 #define KEY_1                              (10)
 #define KEY_8                              (17)
 
-#define CANVAS_WIDTH                       (640)
-#define CANVAS_HEIGHT                      (480)
+#define DEFAULT_CANVAS_WIDTH               (640)
+#define DEFAULT_CANVAS_HEIGHT              (480)
 
 enum {
 	DRAWMODE_NONE,
@@ -64,6 +65,7 @@ static xcb_gcontext_t gc;
 static xcb_shm_seg_t shmseg;
 static uint32_t shmid;
 static xcb_pixmap_t pixmap;
+static int canvas_width, canvas_height;
 static uint32_t *pixels;
 static uint8_t drawmode;
 
@@ -182,25 +184,11 @@ create_window(void)
 	}
 
 	window = xcb_generate_id(conn);
-	shmseg = xcb_generate_id(conn);
-	pixmap = xcb_generate_id(conn);
 	gc = xcb_generate_id(conn);
-
-	check_shm_extension();
-
-	shmid = shmget(
-		IPC_PRIVATE, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(uint32_t),
-		IPC_CREAT | 0600
-	);
-
-	pixels = (uint32_t *)(shmat(shmid, NULL, 0));
-
-	memset(pixels, 255, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(uint32_t));
-	xcb_shm_attach(conn, shmseg, shmid, 0);
 
 	xcb_create_window(
 		conn, screen->root_depth, window, screen->root, 0, 0,
-		CANVAS_WIDTH, CANVAS_HEIGHT, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
+		800, 600, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
 		screen->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
 		(const uint32_t[]) {
 			screen->black_pixel,
@@ -235,13 +223,66 @@ create_window(void)
 
 	xcb_create_gc(conn, gc, window, 0, 0);
 
+	xcb_map_window(conn, window);
+	xcb_flush(conn);
+}
+
+static void
+create_canvas(int width, int height)
+{
+	canvas_width = width;
+	canvas_height = height;
+
+	shmseg = xcb_generate_id(conn);
+	pixmap = xcb_generate_id(conn);
+
+	check_shm_extension();
+
+	shmid = shmget(
+		IPC_PRIVATE, width * height * sizeof(uint32_t),
+		IPC_CREAT | 0600
+	);
+
+	pixels = (uint32_t *)(shmat(shmid, NULL, 0));
+
+	memset(pixels, 255, width * height * sizeof(uint32_t));
+	xcb_shm_attach(conn, shmseg, shmid, 0);
+
 	xcb_shm_create_pixmap(
-		conn, pixmap, window, CANVAS_WIDTH, CANVAS_HEIGHT,
+		conn, pixmap, window, width, height,
 		screen->root_depth, shmseg, 0
 	);
 
-	xcb_map_window(conn, window);
 	xcb_flush(conn);
+}
+
+static void
+load_canvas(const char *path)
+{
+	FILE *fp;
+	int x, y;
+	uint8_t buf[3];
+
+	if (NULL == (fp = fopen(path, "rb"))) {
+		dief("failed to open file %s: %s", path, strerror(errno));
+	}
+
+	if (fscanf(fp, "P6\n%d %d 255\n", &canvas_width, &canvas_height) != 2) {
+		die("invalid file format");
+	}
+
+	create_canvas(canvas_width, canvas_height);
+
+	for (y = 0; y < canvas_height; y++) {
+		for (x = 0; x < canvas_width; x++) {
+			if ((sizeof(buf)/sizeof(buf[0])) != fread(buf, sizeof(buf[0]), sizeof(buf)/sizeof(buf[0]), fp)) {
+				die("invalid file format");
+			}
+			pixels[y*canvas_width+x] = buf[0] << 16 | buf[1] << 8 | buf[2];
+		}
+	}
+
+	fclose(fp);
 }
 
 static void
@@ -263,8 +304,8 @@ render_scene(void)
 	xsize(&width, &height);
 
 	xcb_copy_area(
-		conn, pixmap, window, gc, 0, 0, (width - CANVAS_WIDTH) / 2,
-		(height - CANVAS_HEIGHT) / 2, CANVAS_WIDTH, CANVAS_HEIGHT
+		conn, pixmap, window, gc, 0, 0, (width - canvas_width) / 2,
+		(height - canvas_height) / 2, canvas_width, canvas_height
 	);
 
 	xcb_flush(conn);
@@ -299,19 +340,19 @@ add_point(int x, int y, struct brush brush)
 
 	xsize(&width, &height);
 
-	x -= (width - CANVAS_WIDTH) / 2;
-	y -= (height - CANVAS_HEIGHT) / 2;
+	x -= (width - canvas_width) / 2;
+	y -= (height - canvas_height) / 2;
 
 	for (dx = -brush.size; dx < brush.size; dx++) {
 		mapx = x + dx;
-		if (mapx < 0 || mapx >= CANVAS_WIDTH) continue;
+		if (mapx < 0 || mapx >= canvas_width) continue;
 		for (dy = -brush.size; dy < brush.size; dy++) {
 			mapy = y + dy;
-			if (mapy < 0 || mapy >= CANVAS_HEIGHT) continue;
+			if (mapy < 0 || mapy >= canvas_height) continue;
 			distance = sqrt(dx*dx+dy*dy);
 			if (distance < brush.size) {
-				pixels[mapy*CANVAS_WIDTH+mapx] = color_lerp(
-					brush.color, pixels[mapy*CANVAS_WIDTH+mapx],
+				pixels[mapy*canvas_width+mapx] = color_lerp(
+					brush.color, pixels[mapy*canvas_width+mapx],
 					distance/brush.size
 				);
 			}
@@ -336,10 +377,11 @@ print_opt(const char *sh, const char *lo, const char *desc)
 static void
 usage(void)
 {
-	puts("Usage: apint [ -hv ]");
+	puts("Usage: apint [ -hv ] [ -l FILE ]");
 	puts("Options are:");
 	print_opt("-h", "--help", "display this message and exit");
 	print_opt("-v", "--version", "display the program version");
+	print_opt("-l", "--load", "load ppm image");
 	exit(0);
 }
 
@@ -431,16 +473,21 @@ h_button_release(xcb_button_release_event_t *ev)
 int
 main(int argc, char **argv)
 {
+	const char *loadpath = NULL;
 	xcb_generic_event_t *ev;
 
 	if (++argv, --argc > 0) {
 		if (match_opt(*argv, "-h", "--help")) usage();
 		else if (match_opt(*argv, "-v", "--version")) version();
+		else if (match_opt(*argv, "-l", "--load") && --argc > 0) loadpath = *++argv;
 		else if (**argv == '-') dief("invalid option %s", *argv);
 		else dief("unexpected argument: %s", *argv);
 	}
 
 	create_window();
+
+	if (NULL == loadpath) create_canvas(DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT);
+	else load_canvas(loadpath);
 
 	while ((ev = xcb_wait_for_event(conn))) {
 		switch (ev->response_type & ~0x80) {
