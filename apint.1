@@ -1,4 +1,4 @@
-.TH APINT 1 "July 30, 2022"
+.TH APINT 1 "August 1, 2022"
 .SH NAME
 apint \- primitive paint application for X.
 .SH SYNOPSIS
@@ -19,7 +19,7 @@ load ppm image
 .SH EXAMPLES
 .TP
 \fBdraw over a screenshot\fR
-apint -f -l $(xscreenshot -p -d $(mktemp -d))
+xscreenshot -s | apint -f -l /dev/stdin
 .SH EXIT STATUS
 .TP
 \fB0\fR
