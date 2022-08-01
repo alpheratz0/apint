@@ -39,6 +39,8 @@
 #include <xcb/xproto.h>
 #include <xcb/shm.h>
 
+#define ARRLEN(arr)                        (sizeof(arr)/sizeof(arr[0]))
+
 #define UNUSED                             __attribute__((unused))
 
 #define KEY_1                              (10)
@@ -282,13 +284,26 @@ load_canvas(const char *path)
 {
 	FILE *fp;
 	int x, y;
-	uint8_t buf[3];
+	uint8_t pix[3];
+	uint8_t hdr[128];
+	size_t hdrlen;
+	int nlc;
 
 	if (NULL == (fp = fopen(path, "rb"))) {
 		dief("failed to open file %s: %s", path, strerror(errno));
 	}
 
-	if (fscanf(fp, "P6\n%d %d 255\n", &canvas_width, &canvas_height) != 2) {
+	for (hdrlen = 0, nlc = 0; nlc != 2 && hdrlen < ARRLEN(hdr); ++hdrlen) {
+		if (fread(&hdr[hdrlen], 1, 1, fp) != 1) {
+			die("invalid file format");
+		}
+
+		if (hdr[hdrlen] == '\n') ++nlc;
+	}
+
+	hdr[hdrlen] = 0;
+
+	if (sscanf((char *)(hdr), "P6\n%d %d 255\n", &canvas_width, &canvas_height) != 2) {
 		die("invalid file format");
 	}
 
@@ -296,10 +311,10 @@ load_canvas(const char *path)
 
 	for (y = 0; y < canvas_height; y++) {
 		for (x = 0; x < canvas_width; x++) {
-			if ((sizeof(buf)/sizeof(buf[0])) != fread(buf, sizeof(buf[0]), sizeof(buf)/sizeof(buf[0]), fp)) {
+			if (ARRLEN(pix) != fread(pix, sizeof(pix[0]), ARRLEN(pix), fp)) {
 				die("invalid file format");
 			}
-			pixels[y*canvas_width+x] = buf[0] << 16 | buf[1] << 8 | buf[2];
+			pixels[y*canvas_width+x] = pix[0] << 16 | pix[1] << 8 | pix[2];
 		}
 	}
 
