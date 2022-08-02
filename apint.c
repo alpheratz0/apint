@@ -50,19 +50,19 @@
 #define DEFAULT_CANVAS_HEIGHT              (480)
 
 enum {
-	DRAWMODE_NONE,
-	DRAWMODE_PAINT,
-	DRAWMODE_ERASE
+	DM_NONE,
+	DM_PAINT,
+	DM_ERASE
 };
 
 enum {
-	STARTUPMODE_WINDOWED,
-	STARTUPMODE_FULLSCREEN
+	SM_WINDOWED,
+	SM_FULLSCREEN
 };
 
 struct brush {
 	uint32_t color;
-	int size;
+	int8_t size;
 };
 
 static xcb_connection_t *conn;
@@ -72,10 +72,9 @@ static xcb_gcontext_t gc;
 static xcb_shm_seg_t shmseg;
 static uint32_t shmid;
 static xcb_pixmap_t pixmap;
-static int canvas_width, canvas_height;
+static uint8_t draw_mode, startup_mode;
+static int16_t canvas_width, canvas_height;
 static uint32_t *pixels;
-static uint8_t drawmode;
-static uint8_t startupmode;
 
 static const uint32_t palette[8] = {
 	0xff0000, 0x00ff00, 0x0000ff, 0xffff00,
@@ -236,7 +235,7 @@ create_window(void)
 		(const uint8_t[]) { 0xff, 0xff, 0xff, 0xff }
 	);
 
-	if (startupmode == STARTUPMODE_FULLSCREEN) {
+	if (startup_mode == SM_FULLSCREEN) {
 		xcb_change_property(
 			conn, XCB_PROP_MODE_REPLACE, window,
 			xatom("_NET_WM_STATE"), XCB_ATOM_ATOM, 32, 1,
@@ -251,7 +250,7 @@ create_window(void)
 }
 
 static void
-create_canvas(int width, int height)
+create_canvas(int16_t width, int16_t height)
 {
 	canvas_width = width;
 	canvas_height = height;
@@ -283,11 +282,11 @@ static void
 load_canvas(const char *path)
 {
 	FILE *fp;
-	int x, y;
+	int16_t x, y;
 	uint8_t pix[3];
 	uint8_t hdr[128];
 	size_t hdrlen;
-	int nlc;
+	uint8_t nlc;
 
 	if (NULL == (fp = fopen(path, "rb"))) {
 		dief("failed to open file %s: %s", path, strerror(errno));
@@ -303,7 +302,11 @@ load_canvas(const char *path)
 
 	hdr[hdrlen] = 0;
 
-	if (sscanf((char *)(hdr), "P6\n%d %d 255\n", &canvas_width, &canvas_height) != 2) {
+	if (sscanf((char *)(hdr), "P6\n%hd %hd 255\n", &canvas_width, &canvas_height) != 2) {
+		die("invalid file format");
+	}
+
+	if (canvas_width <= 0 || canvas_height <= 0) {
 		die("invalid file format");
 	}
 
@@ -311,7 +314,7 @@ load_canvas(const char *path)
 
 	for (y = 0; y < canvas_height; y++) {
 		for (x = 0; x < canvas_width; x++) {
-			if (ARRLEN(pix) != fread(pix, sizeof(pix[0]), ARRLEN(pix), fp)) {
+			if (fread(pix, sizeof(pix[0]), ARRLEN(pix), fp) != ARRLEN(pix)) {
 				die("invalid file format");
 			}
 			pixels[y*canvas_width+x] = pix[0] << 16 | pix[1] << 8 | pix[2];
@@ -367,10 +370,10 @@ color_lerp(uint32_t from, uint32_t to, double v)
 }
 
 static void
-add_point(int x, int y, struct brush brush)
+add_point(int16_t x, int16_t y, struct brush brush)
 {
-	int dx, dy;
-	int mapx, mapy;
+	int8_t dx, dy;
+	int16_t mapx, mapy;
 	int16_t width, height;
 	double distance;
 
@@ -446,17 +449,17 @@ h_key_press(xcb_key_press_event_t *ev)
 static void
 h_button_press(xcb_button_press_event_t *ev)
 {
-	if (drawmode != DRAWMODE_NONE) {
+	if (draw_mode != DM_NONE) {
 		return;
 	}
 
 	switch (ev->detail) {
 		case XCB_BUTTON_INDEX_1:
-			drawmode = DRAWMODE_PAINT;
+			draw_mode = DM_PAINT;
 			add_point(ev->event_x, ev->event_y, paintb);
 			break;
 		case XCB_BUTTON_INDEX_3:
-			drawmode = DRAWMODE_ERASE;
+			draw_mode = DM_ERASE;
 			add_point(ev->event_x, ev->event_y, eraseb);
 			break;
 		case XCB_BUTTON_INDEX_4:
@@ -475,11 +478,11 @@ h_button_press(xcb_button_press_event_t *ev)
 static void
 h_motion_notify(xcb_motion_notify_event_t *ev)
 {
-	switch (drawmode) {
-		case DRAWMODE_PAINT:
+	switch (draw_mode) {
+		case DM_PAINT:
 			add_point(ev->event_x, ev->event_y, paintb);
 			break;
-		case DRAWMODE_ERASE:
+		case DM_ERASE:
 			add_point(ev->event_x, ev->event_y, eraseb);
 			break;
 	}
@@ -491,7 +494,7 @@ h_button_release(xcb_button_release_event_t *ev)
 	switch (ev->detail) {
 		case XCB_BUTTON_INDEX_1:
 		case XCB_BUTTON_INDEX_3:
-			drawmode = DRAWMODE_NONE;
+			draw_mode = DM_NONE;
 			break;
 	}
 }
@@ -505,7 +508,7 @@ main(int argc, char **argv)
 	while (++argv, --argc > 0) {
 		if (match_opt(*argv, "-h", "--help")) usage();
 		else if (match_opt(*argv, "-v", "--version")) version();
-		else if (match_opt(*argv, "-f", "--fullscreen")) startupmode = STARTUPMODE_FULLSCREEN;
+		else if (match_opt(*argv, "-f", "--fullscreen")) startup_mode = SM_FULLSCREEN;
 		else if (match_opt(*argv, "-l", "--load") && --argc > 0) loadpath = *++argv;
 		else if (**argv == '-') dief("invalid option %s", *argv);
 		else dief("unexpected argument: %s", *argv);
