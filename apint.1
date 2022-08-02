@@ -1,41 +1,37 @@
-.TH APINT 1 "August 1, 2022"
-.SH NAME
-apint \- primitive paint application for X.
-.SH SYNOPSIS
-\fBapint\fP [ -fhv ] [ -l FILE ]
-.SH OPTIONS
-.TP
-\fB\-f\fR, \fB\-\-fullscreen\fR
+.Dd August 2, 2022
+.Dt APINT 1
+.Sh NAME
+.Nm apint
+.Nd primitive paint application for X
+.Sh SYNOPSIS
+.Nm
+.Op Fl fhv
+.Op Fl l Ar FILE
+.Sh DESCRIPTION
+The
+.Nm
+application lets you draw over an empty canvas or one loaded from a .ppm file.
+.Sh OPTIONS
+.Bl -tag -width indent
+.It Fl f, -fullscreen
 start in fullscreen mode
-.TP
-\fB\-h\fR, \fB\-\-help\fR
-show the help message and exit
-.TP
-\fB\-v\fR, \fB\-\-version\fR
+.It Fl h, -help
+show usage
+.It Fl v, -version
 display the program version
-.TP
-\fB\-l\fR, \fB\-\-load\fR
-load ppm image
-.SH EXAMPLES
-.TP
-\fBdraw over a screenshot\fR
+.It Fl l, -load
+load ppm file
+.El
+.Sh EXAMPLES
+.Bl -tag -width indent
+.It draw over a screenshot
 xscreenshot -s | apint -f -l /dev/stdin
-.SH EXIT STATUS
-.TP
-\fB0\fR
-the program terminated successfully
-.TP
-\fB1\fR
-an error occurred
-.SH AUTHOR
-Written by alpheratz0.
-.SH COPYRIGHT
-Copyright \(co 2022 <alpheratz99@protonmail.com>
-.br
-License GPLv2.0: GNU GPL version 2.0 <https://gnu.org/licenses/old-licenses/gpl-2.0.en.html>.
-.br
-This is free software: you are free to change and redistribute it.
-.br
-There is NO WARRANTY, to the extent permitted by law.
-.SH BUGS
+.El
+.Sh SEE ALSO
+.Xr X 7
+.Xr ppm 5
+.Xr xscreenshot 1
+.Sh AUTHORS
+.An alpheratz0 Aq Mt alpheratz99@protonmail.com
+.Sh BUGS
 https://github.com/alpheratz0/apint/issues
