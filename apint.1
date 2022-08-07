@@ -1,4 +1,4 @@
-.Dd August 2, 2022
+.Dd August 7, 2022
 .Dt APINT 1
 .Sh NAME
 .Nm apint
@@ -24,8 +24,8 @@ load ppm file
 .El
 .Sh EXAMPLES
 .Bl -tag -width indent
-.It draw over a screenshot
-xscreenshot -s | apint -f -l /dev/stdin
+.It draw over a freshly taken screenshot
+apint -f -l $(xscreenshot -p -d $(mktemp -d))
 .El
 .Sh SEE ALSO
 .Xr X 7
