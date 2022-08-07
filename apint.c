@@ -40,11 +40,8 @@
 #include <xcb/shm.h>
 
 #define ARRLEN(arr)                        (sizeof(arr)/sizeof(arr[0]))
-
 #define UNUSED                             __attribute__((unused))
-
 #define KEY_1                              (10)
-#define KEY_8                              (17)
 
 #define DEFAULT_CANVAS_WIDTH               (640)
 #define DEFAULT_CANVAS_HEIGHT              (480)
@@ -440,7 +437,7 @@ h_expose(UNUSED xcb_expose_event_t *ev)
 static void
 h_key_press(xcb_key_press_event_t *ev)
 {
-	if (ev->detail >= KEY_1 && ev->detail <= KEY_8) {
+	if (ev->detail >= KEY_1 && ev->detail < (KEY_1 + ARRLEN(palette))) {
 		paint_brush.color = palette[(int)(ev->detail) - KEY_1];
 	}
 }
