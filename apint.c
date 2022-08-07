@@ -49,6 +49,15 @@
 #define DEFAULT_CANVAS_WIDTH               (640)
 #define DEFAULT_CANVAS_HEIGHT              (480)
 
+#define RED                                (0xff0000)
+#define GREEN                              (0xff00)
+#define BLUE                               (0xff)
+#define YELLOW                             (RED|GREEN)
+#define VIOLET                             (RED|BLUE)
+#define TURQUOISE                          (GREEN|BLUE)
+#define WHITE                              (RED|GREEN|BLUE)
+#define BLACK                              (0)
+
 enum {
 	DM_NONE,
 	DM_PAINT,
@@ -76,20 +85,9 @@ static uint8_t draw_mode, startup_mode;
 static int16_t canvas_width, canvas_height;
 static uint32_t *pixels;
 
-static const uint32_t palette[8] = {
-	0xff0000, 0x00ff00, 0x0000ff, 0xffff00,
-	0x00ffff, 0x000000, 0xffffff, 0xcccccc
-};
-
-static struct brush paintb = {
-	.color = palette[0],
-	.size = 10
-};
-
-static struct brush eraseb = {
-	.color = 0xffffff,
-	.size = 30
-};
+static const uint32_t palette[] = { RED, GREEN, BLUE, YELLOW, VIOLET, TURQUOISE, WHITE, BLACK };
+static struct brush paint_brush = { RED, 10 };
+static struct brush erase_brush = { WHITE, 30 };
 
 static void
 die(const char *err)
@@ -99,19 +97,20 @@ die(const char *err)
 }
 
 static void
-dief(const char *err, ...)
+dief(const char *fmt, ...)
 {
-	va_list list;
+	va_list args;
+
 	fputs("apint: ", stderr);
-	va_start(list, err);
-	vfprintf(stderr, err, list);
-	va_end(list);
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
 	fputc('\n', stderr);
 	exit(1);
 }
 
 static xcb_atom_t
-xatom(const char *name)
+get_atom(const char *name)
 {
 	xcb_atom_t atom;
 	xcb_generic_error_t *error;
@@ -134,7 +133,7 @@ xatom(const char *name)
 }
 
 static void
-xsize(int16_t *width, int16_t *height)
+get_window_size(int16_t *width, int16_t *height)
 {
 	xcb_generic_error_t *error;
 	xcb_get_geometry_cookie_t cookie;
@@ -158,9 +157,9 @@ xsize(int16_t *width, int16_t *height)
 static void
 check_shm_extension(void)
 {
-	xcb_shm_query_version_reply_t *reply;
-	xcb_shm_query_version_cookie_t cookie;
 	xcb_generic_error_t *error;
+	xcb_shm_query_version_cookie_t cookie;
+	xcb_shm_query_version_reply_t *reply;
 
 	error = NULL;
 	cookie = xcb_shm_query_version(conn);
@@ -224,22 +223,22 @@ create_window(void)
 	/* add WM_DELETE_WINDOW to WM_PROTOCOLS */
 	xcb_change_property(
 		conn, XCB_PROP_MODE_REPLACE, window,
-		xatom("WM_PROTOCOLS"), XCB_ATOM_ATOM, 32, 1,
-		(const xcb_atom_t[]) { xatom("WM_DELETE_WINDOW") }
+		get_atom("WM_PROTOCOLS"), XCB_ATOM_ATOM, 32, 1,
+		(const xcb_atom_t[]) { get_atom("WM_DELETE_WINDOW") }
 	);
 
 	/* remove any transparency */
 	xcb_change_property(
 		conn, XCB_PROP_MODE_REPLACE, window,
-		xatom("_NET_WM_WINDOW_OPACITY"), XCB_ATOM_CARDINAL, 32, 1,
+		get_atom("_NET_WM_WINDOW_OPACITY"), XCB_ATOM_CARDINAL, 32, 1,
 		(const uint8_t[]) { 0xff, 0xff, 0xff, 0xff }
 	);
 
 	if (startup_mode == SM_FULLSCREEN) {
 		xcb_change_property(
 			conn, XCB_PROP_MODE_REPLACE, window,
-			xatom("_NET_WM_STATE"), XCB_ATOM_ATOM, 32, 1,
-			(const xcb_atom_t[]) { xatom("_NET_WM_STATE_FULLSCREEN") }
+			get_atom("_NET_WM_STATE"), XCB_ATOM_ATOM, 32, 1,
+			(const xcb_atom_t[]) { get_atom("_NET_WM_STATE_FULLSCREEN") }
 		);
 	}
 
@@ -265,7 +264,7 @@ create_canvas(int16_t width, int16_t height)
 		IPC_CREAT | 0600
 	);
 
-	pixels = (uint32_t *)(shmat(shmid, NULL, 0));
+	pixels = shmat(shmid, NULL, 0);
 
 	memset(pixels, 255, width * height * sizeof(uint32_t));
 	xcb_shm_attach(conn, shmseg, shmid, 0);
@@ -340,7 +339,7 @@ render_scene(void)
 {
 	int16_t width, height;
 
-	xsize(&width, &height);
+	get_window_size(&width, &height);
 
 	xcb_copy_area(
 		conn, pixmap, window, gc, 0, 0, (width - canvas_width) / 2,
@@ -377,7 +376,7 @@ add_point(int16_t x, int16_t y, struct brush brush)
 	int16_t width, height;
 	double distance;
 
-	xsize(&width, &height);
+	get_window_size(&width, &height);
 
 	x -= (width - canvas_width) / 2;
 	y -= (height - canvas_height) / 2;
@@ -410,7 +409,7 @@ match_opt(const char *in, const char *sh, const char *lo)
 static void
 usage(void)
 {
-	puts("usage: apint [-fhv] [-l FILE]");
+	puts("usage: apint [-fhv] [-l file]");
 	exit(0);
 }
 
@@ -426,7 +425,7 @@ h_client_message(xcb_client_message_event_t *ev)
 {
 	/* check if the wm sent a delete window message */
 	/* https://www.x.org/docs/ICCCM/icccm.pdf */
-	if (ev->data.data32[0] == xatom("WM_DELETE_WINDOW")) {
+	if (ev->data.data32[0] == get_atom("WM_DELETE_WINDOW")) {
 		destroy_window();
 		exit(0);
 	}
@@ -442,34 +441,34 @@ static void
 h_key_press(xcb_key_press_event_t *ev)
 {
 	if (ev->detail >= KEY_1 && ev->detail <= KEY_8) {
-		paintb.color = palette[(int)(ev->detail) - KEY_1];
+		paint_brush.color = palette[(int)(ev->detail) - KEY_1];
 	}
 }
 
 static void
 h_button_press(xcb_button_press_event_t *ev)
 {
-	if (draw_mode != DM_NONE) {
-		return;
-	}
-
 	switch (ev->detail) {
 		case XCB_BUTTON_INDEX_1:
-			draw_mode = DM_PAINT;
-			add_point(ev->event_x, ev->event_y, paintb);
+			if (draw_mode == DM_NONE) {
+				draw_mode = DM_PAINT;
+				add_point(ev->event_x, ev->event_y, paint_brush);
+			}
 			break;
 		case XCB_BUTTON_INDEX_3:
-			draw_mode = DM_ERASE;
-			add_point(ev->event_x, ev->event_y, eraseb);
+			if (draw_mode == DM_NONE) {
+				draw_mode = DM_ERASE;
+				add_point(ev->event_x, ev->event_y, erase_brush);
+			}
 			break;
 		case XCB_BUTTON_INDEX_4:
-			if (paintb.size < 50) {
-				paintb.size += 1;
+			if (paint_brush.size < 50) {
+				paint_brush.size += 1;
 			}
 			break;
 		case XCB_BUTTON_INDEX_5:
-			if (paintb.size > 2) {
-				paintb.size -= 1;
+			if (paint_brush.size > 2) {
+				paint_brush.size -= 1;
 			}
 			break;
 	}
@@ -480,10 +479,10 @@ h_motion_notify(xcb_motion_notify_event_t *ev)
 {
 	switch (draw_mode) {
 		case DM_PAINT:
-			add_point(ev->event_x, ev->event_y, paintb);
+			add_point(ev->event_x, ev->event_y, paint_brush);
 			break;
 		case DM_ERASE:
-			add_point(ev->event_x, ev->event_y, eraseb);
+			add_point(ev->event_x, ev->event_y, erase_brush);
 			break;
 	}
 }
