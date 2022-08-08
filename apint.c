@@ -106,6 +106,16 @@ dief(const char *fmt, ...)
 	exit(1);
 }
 
+static const char *
+enotnull(const char *str, const char *name)
+{
+	if (NULL == str) {
+		dief("%s cannot be null", name);
+	}
+
+	return str;
+}
+
 static xcb_atom_t
 get_atom(const char *name)
 {
@@ -397,12 +407,6 @@ add_point(int16_t x, int16_t y, struct brush brush)
 	render_scene();
 }
 
-static int
-match_opt(const char *in, const char *sh, const char *lo)
-{
-	return (strcmp(in, sh) == 0) || (strcmp(in, lo) == 0);
-}
-
 static void
 usage(void)
 {
@@ -502,10 +506,10 @@ main(int argc, char **argv)
 	xcb_generic_event_t *ev;
 
 	while (++argv, --argc > 0) {
-		if (match_opt(*argv, "-h", "--help")) usage();
-		else if (match_opt(*argv, "-v", "--version")) version();
-		else if (match_opt(*argv, "-f", "--fullscreen")) startup_mode = SM_FULLSCREEN;
-		else if (match_opt(*argv, "-l", "--load") && --argc > 0) loadpath = *++argv;
+		if (!strcmp(*argv, "-h")) usage();
+		else if (!strcmp(*argv, "-v")) version();
+		else if (!strcmp(*argv, "-f")) startup_mode = SM_FULLSCREEN;
+		else if (!strcmp(*argv, "-l")) --argc, loadpath = enotnull(*++argv, "path");
 		else if (**argv == '-') dief("invalid option %s", *argv);
 		else dief("unexpected argument: %s", *argv);
 	}
