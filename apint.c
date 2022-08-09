@@ -36,8 +36,10 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
 #include <xcb/shm.h>
+#include <xkbcommon/xkbcommon-keysyms.h>
 
 #define ARRLEN(arr)                        (sizeof(arr)/sizeof(arr[0]))
 #define UNUSED                             __attribute__((unused))
@@ -75,6 +77,7 @@ static xcb_connection_t *conn;
 static xcb_window_t window;
 static xcb_screen_t *screen;
 static xcb_gcontext_t gc;
+static xcb_key_symbols_t *ksyms;
 static xcb_shm_seg_t shmseg;
 static uint32_t shmid;
 static xcb_pixmap_t pixmap;
@@ -196,6 +199,7 @@ create_window(void)
 		die("can't get default screen");
 	}
 
+	ksyms = xcb_key_symbols_alloc(conn);
 	window = xcb_generate_id(conn);
 	gc = xcb_generate_id(conn);
 
@@ -209,7 +213,8 @@ create_window(void)
 			XCB_EVENT_MASK_KEY_PRESS |
 			XCB_EVENT_MASK_BUTTON_PRESS |
 			XCB_EVENT_MASK_BUTTON_RELEASE |
-			XCB_EVENT_MASK_POINTER_MOTION
+			XCB_EVENT_MASK_POINTER_MOTION |
+			XCB_EVENT_MASK_KEYMAP_STATE
 		}
 	);
 
@@ -336,6 +341,7 @@ destroy_window(void)
 	shmctl(shmid, IPC_RMID, NULL);
 	xcb_shm_detach(conn, shmseg);
 	shmdt(pixels);
+	xcb_key_symbols_free(ksyms);
 	xcb_free_gc(conn, gc);
 	xcb_free_pixmap(conn, pixmap);
 	xcb_disconnect(conn);
@@ -441,8 +447,12 @@ h_expose(UNUSED xcb_expose_event_t *ev)
 static void
 h_key_press(xcb_key_press_event_t *ev)
 {
-	if (ev->detail >= KEY_1 && ev->detail < (KEY_1 + ARRLEN(palette))) {
-		paint_brush.color = palette[(int)(ev->detail) - KEY_1];
+	xcb_keysym_t key;
+
+	key = xcb_key_symbols_get_keysym(ksyms, ev->detail, 0);
+
+	if (key >= XKB_KEY_1 && key < (XKB_KEY_1 + ARRLEN(palette))) {
+		paint_brush.color = palette[key - XKB_KEY_1];
 	}
 }
 
@@ -499,6 +509,12 @@ h_button_release(xcb_button_release_event_t *ev)
 	}
 }
 
+static void
+h_mapping_notify(xcb_mapping_notify_event_t *ev)
+{
+      xcb_refresh_keyboard_mapping(ksyms, ev);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -538,6 +554,9 @@ main(int argc, char **argv)
 				break;
 			case XCB_BUTTON_RELEASE:
 				h_button_release((xcb_button_release_event_t *)(ev));
+				break;
+			case XCB_MAPPING_NOTIFY:
+				h_mapping_notify((xcb_mapping_notify_event_t *)(ev));
 				break;
 		}
 
