@@ -44,8 +44,8 @@
 #define ARRLEN(arr)                        (sizeof(arr)/sizeof(arr[0]))
 #define UNUSED                             __attribute__((unused))
 
-#define DEFAULT_CANVAS_WIDTH               (640)
-#define DEFAULT_CANVAS_HEIGHT              (480)
+#define DEFAULT_CANVAS_WIDTH               (800)
+#define DEFAULT_CANVAS_HEIGHT              (600)
 
 #define RED                                (0xff0000)
 #define GREEN                              (0xff00)
