@@ -78,7 +78,7 @@ static xcb_screen_t *screen;
 static xcb_gcontext_t gc;
 static xcb_key_symbols_t *ksyms;
 static xcb_shm_seg_t shmseg;
-static uint32_t shmid;
+static int shmid;
 static xcb_pixmap_t pixmap;
 static uint8_t draw_mode, startup_mode;
 static int16_t canvas_width, canvas_height;
@@ -262,6 +262,9 @@ create_window(void)
 static void
 create_canvas(int16_t width, int16_t height)
 {
+	xcb_void_cookie_t cookie;
+	xcb_generic_error_t *error;
+
 	canvas_width = width;
 	canvas_height = height;
 
@@ -275,10 +278,27 @@ create_canvas(int16_t width, int16_t height)
 		IPC_CREAT | 0600
 	);
 
+	if (shmid < 0) {
+		dief("shmget failed: %s", strerror(errno));
+	}
+
 	pixels = shmat(shmid, NULL, 0);
 
+	if ((void *)(-1) == pixels) {
+		shmctl(shmid, IPC_RMID, NULL);
+		dief("shmat failed: %s", strerror(errno));
+	}
+
 	memset(pixels, 255, width * height * sizeof(uint32_t));
-	xcb_shm_attach(conn, shmseg, shmid, 0);
+
+	cookie = xcb_shm_attach_checked(conn, shmseg, shmid, 0);
+	error = xcb_request_check(conn, cookie);
+
+	if (NULL != error) {
+		shmctl(shmid, IPC_RMID, NULL);
+		dief("xcb_shm_attach failed with error code: %d",
+				(int)(error->error_code));
+	}
 
 	xcb_shm_create_pixmap(
 		conn, pixmap, window, width, height,
