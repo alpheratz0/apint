@@ -43,7 +43,6 @@
 
 #define ARRLEN(arr)                        (sizeof(arr)/sizeof(arr[0]))
 #define UNUSED                             __attribute__((unused))
-#define KEY_1                              (10)
 
 #define DEFAULT_CANVAS_WIDTH               (640)
 #define DEFAULT_CANVAS_HEIGHT              (480)
