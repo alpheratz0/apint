@@ -4,7 +4,8 @@ Primitive paint application for X.
 
 ]|~ build ~|[
 
-In order to build apint you will need xcb and xcbshm headers.
+In order to build apint you will need xcb, xcb-shm and
+xcb-keysyms headers.
 $ make
 
 ]|~ license ~|[
