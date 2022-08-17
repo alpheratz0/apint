@@ -127,7 +127,7 @@ get_atom(const char *name)
 	xcb_intern_atom_reply_t *reply;
 
 	error = NULL;
-	cookie = xcb_intern_atom(conn, 1, strlen(name), name);
+	cookie = xcb_intern_atom(conn, 0, strlen(name), name);
 	reply = xcb_intern_atom_reply(conn, cookie, &error);
 
 	if (NULL != error) {
