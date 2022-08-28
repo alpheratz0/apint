@@ -29,7 +29,7 @@ install: all
 
 dist: clean
 	mkdir -p apint-$(VERSION)
-	cp -R LICENSE Makefile README apint.1 apint.c apint-$(VERSION)
+	cp -R COPYING Makefile README apint.1 apint.c apint-$(VERSION)
 	tar -cf apint-$(VERSION).tar apint-$(VERSION)
 	gzip apint-$(VERSION).tar
 	rm -rf apint-$(VERSION)
