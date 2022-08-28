@@ -41,20 +41,13 @@
 #include <xcb/shm.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
+#include "config.h"
+
 #define ARRLEN(arr)                        (sizeof(arr)/sizeof(arr[0]))
 #define UNUSED                             __attribute__((unused))
 
 #define DEFAULT_CANVAS_WIDTH               (800)
 #define DEFAULT_CANVAS_HEIGHT              (600)
-
-#define RED                                (0xff0000)
-#define GREEN                              (0xff00)
-#define BLUE                               (0xff)
-#define YELLOW                             (RED|GREEN)
-#define VIOLET                             (RED|BLUE)
-#define TURQUOISE                          (GREEN|BLUE)
-#define WHITE                              (RED|GREEN|BLUE)
-#define BLACK                              (0)
 
 enum {
 	DM_NONE,
@@ -84,9 +77,8 @@ static uint8_t draw_mode, startup_mode;
 static int16_t canvas_width, canvas_height;
 static uint32_t *pixels;
 
-static const uint32_t palette[] = { RED, GREEN, BLUE, YELLOW, VIOLET, TURQUOISE, WHITE, BLACK };
-static struct brush paint_brush = { RED, 10 };
-static struct brush erase_brush = { WHITE, 30 };
+static struct brush paint_brush = { palette[0], 10 };
+static struct brush erase_brush = { erase_color, 30 };
 
 static void
 die(const char *err)
@@ -111,10 +103,8 @@ dief(const char *fmt, ...)
 static const char *
 enotnull(const char *str, const char *name)
 {
-	if (NULL == str) {
+	if (NULL == str)
 		dief("%s cannot be null", name);
-	}
-
 	return str;
 }
 
@@ -126,14 +116,12 @@ get_atom(const char *name)
 	xcb_intern_atom_cookie_t cookie;
 	xcb_intern_atom_reply_t *reply;
 
-	error = NULL;
 	cookie = xcb_intern_atom(conn, 0, strlen(name), name);
 	reply = xcb_intern_atom_reply(conn, cookie, &error);
 
-	if (NULL != error) {
+	if (NULL != error)
 		dief("xcb_intern_atom failed with error code: %d",
 				(int)(error->error_code));
-	}
 
 	atom = reply->atom;
 	free(reply);
@@ -148,14 +136,12 @@ get_window_size(int16_t *width, int16_t *height)
 	xcb_get_geometry_cookie_t cookie;
 	xcb_get_geometry_reply_t *reply;
 
-	error = NULL;
 	cookie = xcb_get_geometry(conn, window);
 	reply = xcb_get_geometry_reply(conn, cookie, &error);
 
-	if (NULL != error) {
+	if (NULL != error)
 		dief("xcb_get_geometry failed with error code: %d",
 				(int)(error->error_code));
-	}
 
 	*width = reply->width;
 	*height = reply->height;
@@ -170,18 +156,15 @@ check_shm_extension(void)
 	xcb_shm_query_version_cookie_t cookie;
 	xcb_shm_query_version_reply_t *reply;
 
-	error = NULL;
 	cookie = xcb_shm_query_version(conn);
 	reply = xcb_shm_query_version_reply(conn, cookie, &error);
 
-	if (NULL != error) {
+	if (NULL != error)
 		dief("xcb_shm_query_version failed with error code: %d",
 				(int)(error->error_code));
-	}
 
-	if (reply->shared_pixmaps == 0) {
+	if (reply->shared_pixmaps == 0)
 		die("shm extension doesn't support shared pixmaps");
-	}
 
 	free(reply);
 }
@@ -189,32 +172,29 @@ check_shm_extension(void)
 static void
 create_window(void)
 {
-	if (xcb_connection_has_error(conn = xcb_connect(NULL, NULL))) {
+	if (xcb_connection_has_error(conn = xcb_connect(NULL, NULL)))
 		die("can't open display");
-	}
 
-	if (NULL == (screen = xcb_setup_roots_iterator(xcb_get_setup(conn)).data)) {
-		xcb_disconnect(conn);
+	if (NULL == (screen = xcb_setup_roots_iterator(xcb_get_setup(conn)).data))
 		die("can't get default screen");
-	}
 
 	ksyms = xcb_key_symbols_alloc(conn);
 	window = xcb_generate_id(conn);
 	gc = xcb_generate_id(conn);
 
-	xcb_create_window(
+	xcb_create_window_aux(
 		conn, screen->root_depth, window, screen->root, 0, 0,
 		800, 600, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
 		screen->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
-		(const uint32_t[]) {
-			screen->black_pixel,
-			XCB_EVENT_MASK_EXPOSURE |
-			XCB_EVENT_MASK_KEY_PRESS |
-			XCB_EVENT_MASK_BUTTON_PRESS |
-			XCB_EVENT_MASK_BUTTON_RELEASE |
-			XCB_EVENT_MASK_POINTER_MOTION |
-			XCB_EVENT_MASK_KEYMAP_STATE
-		}
+		(const xcb_create_window_value_list_t []) {{
+			.background_pixel = 0x000000,
+			.event_mask = XCB_EVENT_MASK_EXPOSURE |
+			              XCB_EVENT_MASK_KEY_PRESS |
+			              XCB_EVENT_MASK_BUTTON_PRESS |
+			              XCB_EVENT_MASK_BUTTON_RELEASE |
+			              XCB_EVENT_MASK_POINTER_MOTION |
+			              XCB_EVENT_MASK_KEYMAP_STATE
+		}}
 	);
 
 	/* set WM_NAME */
@@ -245,13 +225,12 @@ create_window(void)
 		(const uint8_t[]) { 0xff, 0xff, 0xff, 0xff }
 	);
 
-	if (startup_mode == SM_FULLSCREEN) {
+	if (startup_mode == SM_FULLSCREEN)
 		xcb_change_property(
 			conn, XCB_PROP_MODE_REPLACE, window,
 			get_atom("_NET_WM_STATE"), XCB_ATOM_ATOM, 32, 1,
 			(const xcb_atom_t[]) { get_atom("_NET_WM_STATE_FULLSCREEN") }
 		);
-	}
 
 	xcb_create_gc(conn, gc, window, 0, 0);
 
@@ -278,9 +257,8 @@ create_canvas(int16_t width, int16_t height)
 		IPC_CREAT | 0600
 	);
 
-	if (shmid < 0) {
+	if (shmid < 0)
 		dief("shmget failed: %s", strerror(errno));
-	}
 
 	pixels = shmat(shmid, NULL, 0);
 
@@ -318,35 +296,29 @@ load_canvas(const char *path)
 	size_t hdrlen;
 	uint8_t nlc;
 
-	if (NULL == (fp = fopen(path, "rb"))) {
+	if (NULL == (fp = fopen(path, "rb")))
 		dief("failed to open file %s: %s", path, strerror(errno));
-	}
 
 	for (hdrlen = 0, nlc = 0; nlc != 2 && hdrlen < ARRLEN(hdr); ++hdrlen) {
-		if (fread(&hdr[hdrlen], 1, 1, fp) != 1) {
+		if (fread(&hdr[hdrlen], 1, 1, fp) != 1)
 			die("invalid file format");
-		}
-
 		if (hdr[hdrlen] == '\n') ++nlc;
 	}
 
 	hdr[hdrlen] = 0;
 
-	if (sscanf((char *)(hdr), "P6\n%hd %hd 255\n", &canvas_width, &canvas_height) != 2) {
+	if (sscanf((char *)(hdr), "P6\n%hd %hd 255\n", &canvas_width, &canvas_height) != 2)
 		die("invalid file format");
-	}
 
-	if (canvas_width <= 0 || canvas_height <= 0) {
+	if (canvas_width <= 0 || canvas_height <= 0)
 		die("invalid file format");
-	}
 
 	create_canvas(canvas_width, canvas_height);
 
 	for (y = 0; y < canvas_height; y++) {
 		for (x = 0; x < canvas_width; x++) {
-			if (fread(pix, sizeof(pix[0]), ARRLEN(pix), fp) != ARRLEN(pix)) {
+			if (fread(pix, sizeof(pix[0]), ARRLEN(pix), fp) != ARRLEN(pix))
 				die("invalid file format");
-			}
 			pixels[y*canvas_width+x] = pix[0] << 16 | pix[1] << 8 | pix[2];
 		}
 	}
@@ -420,12 +392,11 @@ add_point(int16_t x, int16_t y, struct brush brush)
 			mapy = y + dy;
 			if (mapy < 0 || mapy >= canvas_height) continue;
 			distance = sqrt(dx*dx+dy*dy);
-			if (distance < brush.size) {
+			if (distance < brush.size)
 				pixels[mapy*canvas_width+mapx] = color_lerp(
 					brush.color, pixels[mapy*canvas_width+mapx],
 					distance/brush.size
 				);
-			}
 		}
 	}
 
@@ -470,9 +441,8 @@ h_key_press(xcb_key_press_event_t *ev)
 
 	key = xcb_key_symbols_get_keysym(ksyms, ev->detail, 0);
 
-	if (key >= XKB_KEY_1 && key < (XKB_KEY_1 + ARRLEN(palette))) {
+	if (key >= XKB_KEY_1 && key < (XKB_KEY_1 + ARRLEN(palette)))
 		paint_brush.color = palette[key - XKB_KEY_1];
-	}
 }
 
 static void
@@ -492,14 +462,12 @@ h_button_press(xcb_button_press_event_t *ev)
 			}
 			break;
 		case XCB_BUTTON_INDEX_4:
-			if (paint_brush.size < 50) {
+			if (paint_brush.size < 50)
 				paint_brush.size += 1;
-			}
 			break;
 		case XCB_BUTTON_INDEX_5:
-			if (paint_brush.size > 2) {
+			if (paint_brush.size > 2)
 				paint_brush.size -= 1;
-			}
 			break;
 	}
 }
