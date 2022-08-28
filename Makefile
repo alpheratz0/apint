@@ -1,15 +1,7 @@
 .POSIX:
 .PHONY: all clean install uninstall dist
 
-VERSION = 0.1.0
-
-CC      = cc
-CFLAGS  = -std=c99 -pedantic -Wall -Wextra -Os -DVERSION=\"$(VERSION)\"
-LDLIBS  = -lxcb -lxcb-shm -lxcb-keysyms -lm
-LDFLAGS = -s
-
-PREFIX    = /usr/local
-MANPREFIX = $(PREFIX)/share/man
+include config.mk
 
 all: apint
 
@@ -29,7 +21,7 @@ install: all
 
 dist: clean
 	mkdir -p apint-$(VERSION)
-	cp -R COPYING Makefile README apint.1 apint.c apint-$(VERSION)
+	cp -R COPYING config.mk Makefile README apint.1 apint.c apint-$(VERSION)
 	tar -cf apint-$(VERSION).tar apint-$(VERSION)
 	gzip apint-$(VERSION).tar
 	rm -rf apint-$(VERSION)
