@@ -298,7 +298,7 @@ load_canvas(const char *path)
 	if (NULL == (fp = fopen(path, "rb")))
 		dief("failed to open file %s: %s", path, strerror(errno));
 
-	for (hdrlen = 0, nlc = 0; nlc != 2 && hdrlen < ARRLEN(hdr); ++hdrlen) {
+	for (hdrlen = 0, nlc = 0; nlc != 3 && hdrlen < ARRLEN(hdr); ++hdrlen) {
 		if (fread(&hdr[hdrlen], 1, 1, fp) != 1)
 			die("invalid file format");
 		if (hdr[hdrlen] == '\n') ++nlc;
@@ -306,7 +306,7 @@ load_canvas(const char *path)
 
 	hdr[hdrlen] = 0;
 
-	if (sscanf((char *)(hdr), "P6\n%hd %hd 255\n", &canvas_width, &canvas_height) != 2)
+	if (sscanf((char *)(hdr), "P6\n%hd %hd\n255\n", &canvas_width, &canvas_height) != 2)
 		die("invalid file format");
 
 	if (canvas_width <= 0 || canvas_height <= 0)
