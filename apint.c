@@ -26,12 +26,14 @@
 
 */
 
+#include <png.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
+#include <setjmp.h>
 #include <math.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
@@ -289,40 +291,73 @@ static void
 load_canvas(const char *path)
 {
 	FILE *fp;
+	png_struct *png;
+	png_info *pnginfo;
+	png_byte *row, bit_depth;
 	int16_t x, y;
-	uint8_t pix[3];
-	uint8_t hdr[128];
-	size_t hdrlen;
-	uint8_t nlc;
 
 	if (NULL == (fp = fopen(path, "rb")))
 		dief("failed to open file %s: %s", path, strerror(errno));
 
-	for (hdrlen = 0, nlc = 0; nlc != 3 && hdrlen < ARRLEN(hdr); ++hdrlen) {
-		if (fread(&hdr[hdrlen], 1, 1, fp) != 1)
-			die("invalid file format");
-		if (hdr[hdrlen] == '\n') ++nlc;
-	}
+	if (NULL == (png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL)))
+		die("png_create_read_struct failed");
 
-	hdr[hdrlen] = 0;
+	if (NULL == (pnginfo = png_create_info_struct(png)))
+		die("png_create_info_struct failed");
 
-	if (sscanf((char *)(hdr), "P6\n%hd %hd\n255\n", &canvas_width, &canvas_height) != 2)
-		die("invalid file format");
+	if (setjmp(png_jmpbuf(png)) != 0)
+		die("aborting due to libpng error");
 
-	if (canvas_width <= 0 || canvas_height <= 0)
-		die("invalid file format");
+	png_init_io(png, fp);
+	png_read_info(png, pnginfo);
+
+	canvas_width = png_get_image_width(png, pnginfo);
+	canvas_height = png_get_image_height(png, pnginfo);
+	bit_depth = png_get_bit_depth(png, pnginfo);
 
 	create_canvas(canvas_width, canvas_height);
 
-	for (y = 0; y < canvas_height; y++) {
-		for (x = 0; x < canvas_width; x++) {
-			if (fread(pix, sizeof(pix[0]), ARRLEN(pix), fp) != ARRLEN(pix))
-				die("invalid file format");
-			pixels[y*canvas_width+x] = pix[0] << 16 | pix[1] << 8 | pix[2];
+	if (bit_depth == 16)
+		png_set_strip_16(png);
+
+	if (png_get_valid(png, pnginfo, PNG_INFO_tRNS))
+		png_set_tRNS_to_alpha(png);
+
+	switch (png_get_color_type(png, pnginfo)) {
+		case PNG_COLOR_TYPE_RGB:
+			png_set_filler(png, 0xff, PNG_FILLER_AFTER);
+			break;
+		case PNG_COLOR_TYPE_PALETTE:
+			png_set_palette_to_rgb(png);
+			png_set_filler(png, 0xff, PNG_FILLER_AFTER);
+			break;
+		case PNG_COLOR_TYPE_GRAY:
+			if (bit_depth < 8)
+				png_set_expand_gray_1_2_4_to_8(png);
+			png_set_filler(png, 0xff, PNG_FILLER_AFTER);
+			png_set_gray_to_rgb(png);
+			break;
+	}
+
+	png_read_update_info(png, pnginfo);
+
+	row = malloc(png_get_rowbytes(png, pnginfo));
+
+	for (y = 0; y < canvas_height; ++y) {
+		png_read_row(png, row, NULL);
+		for (x = 0; x < canvas_width; ++x) {
+			pixels[y*canvas_width+x] =
+				row[x*4+0] << 16 |
+				row[x*4+1] << 8 |
+				row[x*4+2] << 0;
 		}
 	}
 
+	png_read_end(png, NULL);
+	png_free_data(png, pnginfo, PNG_FREE_ALL, -1);
+	png_destroy_read_struct(&png, NULL, NULL);
 	fclose(fp);
+	free(row);
 }
 
 static void

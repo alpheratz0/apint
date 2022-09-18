@@ -5,7 +5,7 @@ VERSION   = 0.1.0
 
 CC        = cc
 CFLAGS    = -std=c99 -pedantic -Wall -Wextra -Os -DVERSION=\"$(VERSION)\"
-LDLIBS    = -lxcb -lxcb-shm -lxcb-keysyms -lm
+LDLIBS    = -lxcb -lxcb-shm -lxcb-keysyms -lpng -lm
 LDFLAGS   = -s
 
 PREFIX    = /usr/local
