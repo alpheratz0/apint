@@ -83,14 +83,7 @@ static struct brush paint_brush = { palette[0], 10 };
 static struct brush erase_brush = { erase_color, 30 };
 
 static void
-die(const char *err)
-{
-	fprintf(stderr, "apint: %s\n", err);
-	exit(1);
-}
-
-static void
-dief(const char *fmt, ...)
+die(const char *fmt, ...)
 {
 	va_list args;
 
@@ -106,7 +99,7 @@ static const char *
 enotnull(const char *str, const char *name)
 {
 	if (NULL == str)
-		dief("%s cannot be null", name);
+		die("%s cannot be null", name);
 	return str;
 }
 
@@ -122,7 +115,7 @@ get_atom(const char *name)
 	reply = xcb_intern_atom_reply(conn, cookie, &error);
 
 	if (NULL != error)
-		dief("xcb_intern_atom failed with error code: %d",
+		die("xcb_intern_atom failed with error code: %d",
 				(int)(error->error_code));
 
 	atom = reply->atom;
@@ -142,7 +135,7 @@ get_window_size(int16_t *width, int16_t *height)
 	reply = xcb_get_geometry_reply(conn, cookie, &error);
 
 	if (NULL != error)
-		dief("xcb_get_geometry failed with error code: %d",
+		die("xcb_get_geometry failed with error code: %d",
 				(int)(error->error_code));
 
 	*width = reply->width;
@@ -162,7 +155,7 @@ check_shm_extension(void)
 	reply = xcb_shm_query_version_reply(conn, cookie, &error);
 
 	if (NULL != error)
-		dief("xcb_shm_query_version failed with error code: %d",
+		die("xcb_shm_query_version failed with error code: %d",
 				(int)(error->error_code));
 
 	if (reply->shared_pixmaps == 0)
@@ -259,13 +252,13 @@ create_canvas(int16_t width, int16_t height)
 	);
 
 	if (shmid < 0)
-		dief("shmget failed: %s", strerror(errno));
+		die("shmget failed: %s", strerror(errno));
 
 	pixels = shmat(shmid, NULL, 0);
 
 	if ((void *)(-1) == pixels) {
 		shmctl(shmid, IPC_RMID, NULL);
-		dief("shmat failed: %s", strerror(errno));
+		die("shmat failed: %s", strerror(errno));
 	}
 
 	memset(pixels, 255, width * height * sizeof(uint32_t));
@@ -275,7 +268,7 @@ create_canvas(int16_t width, int16_t height)
 
 	if (NULL != error) {
 		shmctl(shmid, IPC_RMID, NULL);
-		dief("xcb_shm_attach failed with error code: %d",
+		die("xcb_shm_attach failed with error code: %d",
 				(int)(error->error_code));
 	}
 
@@ -297,7 +290,7 @@ load_canvas(const char *path)
 	int16_t x, y;
 
 	if (NULL == (fp = fopen(path, "rb")))
-		dief("failed to open file %s: %s", path, strerror(errno));
+		die("failed to open file %s: %s", path, strerror(errno));
 
 	if (NULL == (png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL)))
 		die("png_create_read_struct failed");
@@ -540,16 +533,23 @@ h_mapping_notify(xcb_mapping_notify_event_t *ev)
 int
 main(int argc, char **argv)
 {
-	const char *loadpath = NULL;
+	const char *loadpath;
 	xcb_generic_event_t *ev;
 
+	loadpath = NULL;
+
 	while (++argv, --argc > 0) {
-		if (!strcmp(*argv, "-h")) usage();
-		else if (!strcmp(*argv, "-v")) version();
-		else if (!strcmp(*argv, "-f")) startup_mode = SM_FULLSCREEN;
-		else if (!strcmp(*argv, "-l")) --argc, loadpath = enotnull(*++argv, "path");
-		else if (**argv == '-') dief("invalid option %s", *argv);
-		else dief("unexpected argument: %s", *argv);
+		if ((*argv)[0] == '-' && (*argv)[1] != '\0' && (*argv)[2] == '\0') {
+			switch ((*argv)[1]) {
+				case 'h': usage(); break;
+				case 'v': version(); break;
+				case 'f': startup_mode = SM_FULLSCREEN; break;
+				case 'l': --argc; loadpath = enotnull(*++argv, "path"); break;
+				default: die("invalid option %s", *argv); break;
+			}
+		} else {
+			die("unexpected argument: %s", *argv);
+		}
 	}
 
 	create_window();
