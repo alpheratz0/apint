@@ -1,4 +1,4 @@
-.Dd August 8, 2022
+.Dd September 18, 2022
 .Dt APINT 1
 .Sh NAME
 .Nm apint
@@ -10,7 +10,7 @@
 .Sh DESCRIPTION
 The
 .Nm
-application lets you draw over an empty canvas or one loaded from a .ppm file.
+application lets you draw over an empty canvas or one loaded from a png file.
 .Sh OPTIONS
 .Bl -tag -width indent
 .It Fl f
@@ -20,7 +20,7 @@ show usage
 .It Fl v
 display the program version
 .It Fl l
-load ppm file
+load png file
 .El
 .Sh EXAMPLES
 .Bl -tag -width indent
@@ -29,7 +29,7 @@ apint -f -l $(xscreenshot -p -d $(mktemp -d))
 .El
 .Sh SEE ALSO
 .Xr X 7
-.Xr ppm 5
+.Xr png 5
 .Xr xscreenshot 1
 .Sh AUTHORS
 .An alpheratz0 Aq Mt alpheratz99@protonmail.com
