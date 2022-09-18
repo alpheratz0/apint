@@ -226,7 +226,7 @@ create_window(void)
 			(const xcb_atom_t[]) { get_atom("_NET_WM_STATE_FULLSCREEN") }
 		);
 
-	xcb_create_gc(conn, gc, window, 0, 0);
+	xcb_create_gc(conn, gc, window, 0, NULL);
 
 	xcb_map_window(conn, window);
 	xcb_flush(conn);
