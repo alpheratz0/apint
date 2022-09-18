@@ -1,14 +1,9 @@
-]|~ apint ~|[
+apint is a primitive paint application for X.
+For more information about it's usage check `man apint`.
 
-Primitive paint application for X.
-
-]|~ build ~|[
-
-In order to build apint you will need xcb, xcb-shm and
-xcb-keysyms headers.
-$ make
-
-]|~ license ~|[
+This program requires libxcb, libxcb-shm, libxcb-keysyms
+and libpng to be installed.
+In order to build this program you need to run `make`.
 
 This program is free software; you can redistribute it
 and/or modify it under the terms of the GNU General Public License
