@@ -475,12 +475,22 @@ h_key_press(xcb_key_press_event_t *ev)
 static void
 h_button_press(xcb_button_press_event_t *ev)
 {
+	int16_t x, y;
+	int16_t width, height;
+
 	switch (ev->detail) {
 		case XCB_BUTTON_INDEX_1:
 			if (draw_mode == DM_NONE) {
 				draw_mode = DM_PAINT;
 				add_point(ev->event_x, ev->event_y, paint_brush);
 			}
+			break;
+		case XCB_BUTTON_INDEX_2:
+			get_window_size(&width, &height);
+			x = ev->event_x - (width - canvas_width) / 2;
+			y = ev->event_y - (height - canvas_height) / 2;
+			if (x >= 0 && x < canvas_width && y >= 0 && y < canvas_height)
+				paint_brush.color = pixels[y*canvas_width+x];
 			break;
 		case XCB_BUTTON_INDEX_3:
 			if (draw_mode == DM_NONE) {
