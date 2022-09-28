@@ -7,5 +7,7 @@
 #define WHITE                              (RED|GREEN|BLUE)
 #define BLACK                              (0)
 
+#define START_COLOR                        (RED)
+#define ERASE_COLOR                        (WHITE)
+
 static const uint32_t palette[] = { RED, GREEN, BLUE, YELLOW, VIOLET, TURQUOISE, WHITE, BLACK };
-static const uint32_t erase_color = WHITE;

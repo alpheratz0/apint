@@ -75,8 +75,8 @@ static uint8_t draw_mode, startup_mode;
 static int16_t canvas_width, canvas_height;
 static uint32_t *pixels;
 
-static struct brush paint_brush = { palette[0], 10 };
-static struct brush erase_brush = { erase_color, 30 };
+static struct brush paint_brush = { START_COLOR, 10 };
+static struct brush erase_brush = { ERASE_COLOR, 30 };
 
 static void
 die(const char *fmt, ...)
