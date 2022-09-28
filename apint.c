@@ -35,12 +35,10 @@
 #include <string.h>
 #include <setjmp.h>
 #include <math.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
-#include <xcb/shm.h>
+#include <xcb/xcb_image.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 #include "config.h"
@@ -72,9 +70,7 @@ static xcb_window_t window;
 static xcb_screen_t *screen;
 static xcb_gcontext_t gc;
 static xcb_key_symbols_t *ksyms;
-static xcb_shm_seg_t shmseg;
-static int shmid;
-static xcb_pixmap_t pixmap;
+static xcb_image_t *image;
 static uint8_t draw_mode, startup_mode;
 static int16_t canvas_width, canvas_height;
 static uint32_t *pixels;
@@ -140,26 +136,6 @@ get_window_size(int16_t *width, int16_t *height)
 
 	*width = reply->width;
 	*height = reply->height;
-
-	free(reply);
-}
-
-static void
-check_shm_extension(void)
-{
-	xcb_generic_error_t *error;
-	xcb_shm_query_version_cookie_t cookie;
-	xcb_shm_query_version_reply_t *reply;
-
-	cookie = xcb_shm_query_version(conn);
-	reply = xcb_shm_query_version_reply(conn, cookie, &error);
-
-	if (NULL != error)
-		die("xcb_shm_query_version failed with error code: %d",
-				(int)(error->error_code));
-
-	if (reply->shared_pixmaps == 0)
-		die("shm extension doesn't support shared pixmaps");
 
 	free(reply);
 }
@@ -235,49 +211,20 @@ create_window(void)
 static void
 create_canvas(int16_t width, int16_t height)
 {
-	xcb_void_cookie_t cookie;
-	xcb_generic_error_t *error;
-
 	canvas_width = width;
 	canvas_height = height;
+	pixels = malloc(width*height*sizeof(uint32_t));
 
-	shmseg = xcb_generate_id(conn);
-	pixmap = xcb_generate_id(conn);
+	if (NULL == pixels)
+		die("error while calling malloc, no memory available");
 
-	check_shm_extension();
-
-	shmid = shmget(
-		IPC_PRIVATE, width * height * sizeof(uint32_t),
-		IPC_CREAT | 0600
+	image = xcb_image_create_native(
+		conn, width, height, XCB_IMAGE_FORMAT_Z_PIXMAP,
+		screen->root_depth, pixels, sizeof(uint32_t)*width*height,
+		(uint8_t *)(pixels)
 	);
-
-	if (shmid < 0)
-		die("shmget failed: %s", strerror(errno));
-
-	pixels = shmat(shmid, NULL, 0);
-
-	if ((void *)(-1) == pixels) {
-		shmctl(shmid, IPC_RMID, NULL);
-		die("shmat failed: %s", strerror(errno));
-	}
 
 	memset(pixels, 255, width * height * sizeof(uint32_t));
-
-	cookie = xcb_shm_attach_checked(conn, shmseg, shmid, 0);
-	error = xcb_request_check(conn, cookie);
-
-	if (NULL != error) {
-		shmctl(shmid, IPC_RMID, NULL);
-		die("xcb_shm_attach failed with error code: %d",
-				(int)(error->error_code));
-	}
-
-	xcb_shm_create_pixmap(
-		conn, pixmap, window, width, height,
-		screen->root_depth, shmseg, 0
-	);
-
-	xcb_flush(conn);
 }
 
 static void
@@ -356,12 +303,9 @@ load_canvas(const char *path)
 static void
 destroy_window(void)
 {
-	shmctl(shmid, IPC_RMID, NULL);
-	xcb_shm_detach(conn, shmseg);
-	shmdt(pixels);
+	xcb_image_destroy(image);
 	xcb_key_symbols_free(ksyms);
 	xcb_free_gc(conn, gc);
-	xcb_free_pixmap(conn, pixmap);
 	xcb_disconnect(conn);
 }
 
@@ -372,9 +316,9 @@ render_scene(void)
 
 	get_window_size(&width, &height);
 
-	xcb_copy_area(
-		conn, pixmap, window, gc, 0, 0, (width - canvas_width) / 2,
-		(height - canvas_height) / 2, canvas_width, canvas_height
+	xcb_image_put(
+		conn, window, gc, image,
+		(width - canvas_width) / 2, (height - canvas_height) / 2, 0
 	);
 
 	xcb_flush(conn);
