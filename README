@@ -1,7 +1,7 @@
 apint is a primitive paint application for X.
 For more information about it's usage check `man apint`.
 
-This program requires libxcb, libxcb-shm, libxcb-keysyms
+This program requires libxcb, libxcb-image, libxcb-keysyms
 and libpng to be installed.
 In order to build this program you need to run `make`.
 
