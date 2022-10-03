@@ -21,8 +21,7 @@ install: all
 
 dist: clean
 	mkdir -p apint-$(VERSION)
-	cp -R COPYING config.mk Makefile README apint.1 config.h \
-		apint.c apint-$(VERSION)
+	cp -R COPYING config.mk Makefile README apint.1 apint.c apint-$(VERSION)
 	tar -cf apint-$(VERSION).tar apint-$(VERSION)
 	gzip apint-$(VERSION).tar
 	rm -rf apint-$(VERSION)

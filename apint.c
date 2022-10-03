@@ -26,6 +26,10 @@
 
 */
 
+/* TODO: cleanup dragging functionality */
+/* TODO: cleanup dragging functionality */
+/* TODO: cleanup dragging functionality */
+
 #include <png.h>
 #include <errno.h>
 #include <stdio.h>
@@ -36,47 +40,29 @@
 #include <setjmp.h>
 #include <math.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_image.h>
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
-#include <xcb/xcb_image.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
-#include "config.h"
-
-#define ARRLEN(arr)                        (sizeof(arr)/sizeof(arr[0]))
-#define UNUSED                             __attribute__((unused))
-
-#define DEFAULT_CANVAS_WIDTH               (800)
-#define DEFAULT_CANVAS_HEIGHT              (600)
-
-enum {
-	DM_NONE,
-	DM_PAINT,
-	DM_ERASE
-};
-
-enum {
-	SM_WINDOWED,
-	SM_FULLSCREEN
-};
-
-struct brush {
-	uint32_t color;
-	int8_t size;
-};
+#define UNUSED __attribute__((unused))
 
 static xcb_connection_t *conn;
-static xcb_window_t window;
 static xcb_screen_t *screen;
+static xcb_window_t window;
 static xcb_gcontext_t gc;
-static xcb_key_symbols_t *ksyms;
 static xcb_image_t *image;
-static uint8_t draw_mode, startup_mode;
-static int16_t canvas_width, canvas_height;
-static uint32_t *pixels;
+static xcb_key_symbols_t *ksyms;
+static xcb_point_t dbp, dcp;
+static int start_in_fullscreen, painting, dragging;
+static int32_t wwidth, wheight, cwidth, cheight;
+static int32_t previous_brush_size, brush_size;
+static uint32_t *px, *cpx, color;
+static uint32_t pi, palette[] = {
+	0xff0000, 0x00ff00, 0x0000ff, 0xffff00,
+	0xff00ff, 0x00ffff, 0x000000, 0xffffff
+};
 
-static struct brush paint_brush = { START_COLOR, 10 };
-static struct brush erase_brush = { ERASE_COLOR, 30 };
 
 static void
 die(const char *fmt, ...)
@@ -111,33 +97,12 @@ get_atom(const char *name)
 	reply = xcb_intern_atom_reply(conn, cookie, &error);
 
 	if (NULL != error)
-		die("xcb_intern_atom failed with error code: %d",
-				(int)(error->error_code));
+		die("xcb_intern_atom failed with error code: %hhu", error->error_code);
 
 	atom = reply->atom;
 	free(reply);
 
 	return atom;
-}
-
-static void
-get_window_size(int16_t *width, int16_t *height)
-{
-	xcb_generic_error_t *error;
-	xcb_get_geometry_cookie_t cookie;
-	xcb_get_geometry_reply_t *reply;
-
-	cookie = xcb_get_geometry(conn, window);
-	reply = xcb_get_geometry_reply(conn, cookie, &error);
-
-	if (NULL != error)
-		die("xcb_get_geometry failed with error code: %d",
-				(int)(error->error_code));
-
-	*width = reply->width;
-	*height = reply->height;
-
-	free(reply);
 }
 
 static void
@@ -149,82 +114,97 @@ create_window(void)
 	if (NULL == (screen = xcb_setup_roots_iterator(xcb_get_setup(conn)).data))
 		die("can't get default screen");
 
+	wwidth = wheight = 600;
+
+	if (NULL == (px = calloc(wwidth * wheight, sizeof(uint32_t))))
+		die("error while calling malloc, no memory available");
+
 	ksyms = xcb_key_symbols_alloc(conn);
 	window = xcb_generate_id(conn);
 	gc = xcb_generate_id(conn);
 
 	xcb_create_window_aux(
 		conn, screen->root_depth, window, screen->root, 0, 0,
-		800, 600, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
-		screen->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
+		wwidth, wheight, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
+		screen->root_visual, XCB_CW_EVENT_MASK,
 		(const xcb_create_window_value_list_t []) {{
-			.background_pixel = 0x000000,
 			.event_mask = XCB_EVENT_MASK_EXPOSURE |
 			              XCB_EVENT_MASK_KEY_PRESS |
+			              XCB_EVENT_MASK_KEY_RELEASE |
 			              XCB_EVENT_MASK_BUTTON_PRESS |
 			              XCB_EVENT_MASK_BUTTON_RELEASE |
-			              XCB_EVENT_MASK_POINTER_MOTION
+			              XCB_EVENT_MASK_POINTER_MOTION |
+			              XCB_EVENT_MASK_STRUCTURE_NOTIFY
 		}}
 	);
 
-	/* set WM_NAME */
-	xcb_change_property(
-		conn, XCB_PROP_MODE_REPLACE, window,
-		XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8,
-		sizeof("apint") - 1, "apint"
+	xcb_create_gc(conn, gc, window, 0, NULL);
+
+	image = xcb_image_create_native(
+		conn, wwidth, wheight, XCB_IMAGE_FORMAT_Z_PIXMAP, screen->root_depth,
+		px, sizeof(uint32_t) * wwidth * wheight, (uint8_t *)(px)
 	);
 
-	/* set WM_CLASS */
 	xcb_change_property(
-		conn, XCB_PROP_MODE_REPLACE, window,
-		XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8,
-		sizeof("apint") * 2, "apint\0apint\0"
+		conn, XCB_PROP_MODE_REPLACE, window, XCB_ATOM_WM_NAME,
+		XCB_ATOM_STRING, 8, sizeof("apint") - 1, "apint"
 	);
 
-	/* add WM_DELETE_WINDOW to WM_PROTOCOLS */
+	xcb_change_property(
+		conn, XCB_PROP_MODE_REPLACE, window, XCB_ATOM_WM_CLASS,
+		XCB_ATOM_STRING, 8, sizeof("apint") * 2, "apint\0apint\0"
+	);
+
 	xcb_change_property(
 		conn, XCB_PROP_MODE_REPLACE, window,
 		get_atom("WM_PROTOCOLS"), XCB_ATOM_ATOM, 32, 1,
-		(const xcb_atom_t[]) { get_atom("WM_DELETE_WINDOW") }
+		(const xcb_atom_t []) { get_atom("WM_DELETE_WINDOW") }
 	);
 
-	/* remove any transparency */
 	xcb_change_property(
 		conn, XCB_PROP_MODE_REPLACE, window,
 		get_atom("_NET_WM_WINDOW_OPACITY"), XCB_ATOM_CARDINAL, 32, 1,
-		(const uint8_t[]) { 0xff, 0xff, 0xff, 0xff }
+		(const uint8_t []) { 0xff, 0xff, 0xff, 0xff }
 	);
 
-	if (startup_mode == SM_FULLSCREEN)
+	if (start_in_fullscreen) {
 		xcb_change_property(
 			conn, XCB_PROP_MODE_REPLACE, window,
 			get_atom("_NET_WM_STATE"), XCB_ATOM_ATOM, 32, 1,
-			(const xcb_atom_t[]) { get_atom("_NET_WM_STATE_FULLSCREEN") }
+			(const xcb_atom_t []) { get_atom("_NET_WM_STATE_FULLSCREEN") }
 		);
-
-	xcb_create_gc(conn, gc, window, 0, NULL);
+	}
 
 	xcb_map_window(conn, window);
 	xcb_flush(conn);
 }
 
 static void
-create_canvas(int16_t width, int16_t height)
+destroy_window(void)
 {
-	canvas_width = width;
-	canvas_height = height;
-	pixels = malloc(width*height*sizeof(uint32_t));
+	xcb_free_gc(conn, gc);
+	xcb_key_symbols_free(ksyms);
+	xcb_image_destroy(image);
+	xcb_disconnect(conn);
+}
 
-	if (NULL == pixels)
+static void
+create_canvas(int32_t width, int32_t height)
+{
+	cwidth = width;
+	cheight = height;
+	cpx = malloc(sizeof(uint32_t) * cwidth * cheight);
+
+	if (NULL == cpx)
 		die("error while calling malloc, no memory available");
 
-	image = xcb_image_create_native(
-		conn, width, height, XCB_IMAGE_FORMAT_Z_PIXMAP,
-		screen->root_depth, pixels, sizeof(uint32_t)*width*height,
-		(uint8_t *)(pixels)
-	);
+	memset(cpx, 255, sizeof(uint32_t) * cwidth * cheight);
+}
 
-	memset(pixels, 255, width * height * sizeof(uint32_t));
+static void
+destroy_canvas(void)
+{
+	free(cpx);
 }
 
 static void
@@ -250,12 +230,9 @@ load_canvas(const char *path)
 
 	png_init_io(png, fp);
 	png_read_info(png, pnginfo);
+	create_canvas(png_get_image_width(png, pnginfo), png_get_image_height(png, pnginfo));
 
-	canvas_width = png_get_image_width(png, pnginfo);
-	canvas_height = png_get_image_height(png, pnginfo);
 	bit_depth = png_get_bit_depth(png, pnginfo);
-
-	create_canvas(canvas_width, canvas_height);
 
 	if (bit_depth == 16)
 		png_set_strip_16(png);
@@ -283,11 +260,10 @@ load_canvas(const char *path)
 
 	row = malloc(png_get_rowbytes(png, pnginfo));
 
-	for (y = 0; y < canvas_height; ++y) {
+	for (y = 0; y < cheight; ++y) {
 		png_read_row(png, row, NULL);
-		for (x = 0; x < canvas_width; ++x) {
-			pixels[y*canvas_width+x] =
-				row[x*4+0] << 16 |
+		for (x = 0; x < cwidth; ++x) {
+			cpx[y*cwidth+x] = row[x*4+0] << 16 |
 				row[x*4+1] << 8 |
 				row[x*4+2] << 0;
 		}
@@ -301,27 +277,62 @@ load_canvas(const char *path)
 }
 
 static void
-destroy_window(void)
+prepare_render(void)
 {
-	xcb_image_destroy(image);
-	xcb_key_symbols_free(ksyms);
-	xcb_free_gc(conn, gc);
-	xcb_disconnect(conn);
+	int32_t x, y, ox, oy;
+
+	memset(px, 0, sizeof(uint32_t) * wwidth * wheight);
+
+	ox = (dcp.x - dbp.x) + (wwidth - cwidth) / 2;
+	oy = (dcp.y - dbp.y) + (wheight - cheight) / 2;
+
+	for (y = 0; y < cheight; ++y) {
+		if ((y+oy) < 0 || (y+oy) >= wheight)
+			continue;
+		for (x = 0; x < cwidth; ++x) {
+			if ((x+ox) < 0 || (x+ox) >= wwidth)
+				continue;
+			px[(y+oy)*wwidth+(x+ox)] = cpx[y*cwidth+x];
+		}
+	}
 }
 
 static void
-render_scene(void)
+set_color(uint32_t c)
 {
-	int16_t width, height;
+	color = c;
+}
 
-	get_window_size(&width, &height);
+static void
+set_brush_size(int32_t bs)
+{
+	previous_brush_size = brush_size;
+	brush_size = bs;
+}
 
-	xcb_image_put(
-		conn, window, gc, image,
-		(width - canvas_width) / 2, (height - canvas_height) / 2, 0
-	);
+static void
+drag_begin(int16_t x, int16_t y)
+{
+	dragging = 1;
+	dbp.x = dbp.x - dcp.x + x;
+	dbp.y = dbp.y - dcp.y + y;
+}
 
+static void
+drag_update(int32_t x, int32_t y)
+{
+	dcp.x = x;
+	dcp.y = y;
+
+	prepare_render();
+	xcb_image_put(conn, window, gc, image, 0, 0, 0);
 	xcb_flush(conn);
+}
+
+static void
+drag_end(void)
+{
+	dragging = 0;
 }
 
 static inline uint8_t
@@ -343,35 +354,35 @@ color_lerp(uint32_t from, uint32_t to, double v)
 	return (r << 16) | (g << 8) | b;
 }
 
-static void
-add_point(int16_t x, int16_t y, struct brush brush)
+static int
+window_coord_to_canvas_coord(int32_t wx, int32_t wy, int32_t *cx, int32_t *cy)
 {
-	int8_t dx, dy;
-	int16_t mapx, mapy;
-	int16_t width, height;
-	double distance;
+	*cx = (dbp.x - dcp.x) + wx - (wwidth - cwidth) / 2;
+	*cy = (dbp.y - dcp.y) + wy - (wheight - cheight) / 2;
 
-	get_window_size(&width, &height);
+	return *cx >= 0 && *cx < cwidth && *cy >= 0 && *cy < cheight;
+}
 
-	x -= (width - canvas_width) / 2;
-	y -= (height - canvas_height) / 2;
+static void
+add_point_to_canvas(int32_t x, int32_t y, uint32_t color, int32_t size)
+{
+	int32_t dx, dy;
 
-	for (dx = -brush.size; dx < brush.size; dx++) {
-		mapx = x + dx;
-		if (mapx < 0 || mapx >= canvas_width) continue;
-		for (dy = -brush.size; dy < brush.size; dy++) {
-			mapy = y + dy;
-			if (mapy < 0 || mapy >= canvas_height) continue;
-			distance = sqrt(dx*dx+dy*dy);
-			if (distance < brush.size)
-				pixels[mapy*canvas_width+mapx] = color_lerp(
-					brush.color, pixels[mapy*canvas_width+mapx],
-					distance/brush.size
-				);
+	for (dy = -size; dy < size; ++dy) {
+		if ((y+dy) < 0 || (y+dy) >= cheight)
+			continue;
+		for (dx = -size; dx < size; ++dx) {
+			if ((x+dx) < 0 || (x+dx) >= cwidth)
+				continue;
+			if (dy*dy+dx*dx < size*size)
+				cpx[(y+dy)*cwidth+(x+dx)] = color_lerp(color,
+						cpx[(y+dy)*cwidth+(x+dx)], sqrt(dy*dy+dx*dx)/size);
 		}
 	}
 
-	render_scene();
+	prepare_render();
+	xcb_image_put(conn, window, gc, image, 0, 0, 0);
+	xcb_flush(conn);
 }
 
 static void
@@ -402,7 +413,7 @@ h_client_message(xcb_client_message_event_t *ev)
 static void
 h_expose(UNUSED xcb_expose_event_t *ev)
 {
-	render_scene();
+	xcb_image_put(conn, window, gc, image, 0, 0, 0);
 }
 
 static void
@@ -412,43 +423,53 @@ h_key_press(xcb_key_press_event_t *ev)
 
 	key = xcb_key_symbols_get_keysym(ksyms, ev->detail, 0);
 
-	if (key >= XKB_KEY_1 && key < (XKB_KEY_1 + ARRLEN(palette)))
-		paint_brush.color = palette[key - XKB_KEY_1];
+	if (key == XKB_KEY_d) {
+		set_color(0xffffff);
+	} else if (key == XKB_KEY_s) {
+		set_brush_size(10);
+	} else if (key == XKB_KEY_b) {
+		set_brush_size(40);
+	} else if (key >= XKB_KEY_1 && key < (XKB_KEY_1 + sizeof(palette)/sizeof(palette[0]))) {
+		set_color(palette[pi = (key - XKB_KEY_1)]);
+	}
+}
+
+static void
+h_key_release(xcb_key_release_event_t *ev)
+{
+	xcb_keysym_t key;
+
+	key = xcb_key_symbols_get_keysym(ksyms, ev->detail, 0);
+
+	if (key == XKB_KEY_d) {
+		set_color(palette[pi]);
+	} else if (key == XKB_KEY_s || key == XKB_KEY_b) {
+		set_brush_size(previous_brush_size);
+	}
 }
 
 static void
 h_button_press(xcb_button_press_event_t *ev)
 {
-	int16_t x, y;
-	int16_t width, height;
+	int32_t x, y;
 
 	switch (ev->detail) {
 		case XCB_BUTTON_INDEX_1:
-			if (draw_mode == DM_NONE) {
-				draw_mode = DM_PAINT;
-				add_point(ev->event_x, ev->event_y, paint_brush);
-			}
+			if (window_coord_to_canvas_coord(ev->event_x, ev->event_y, &x, &y))
+				painting = 1, add_point_to_canvas(x, y, color, brush_size);
 			break;
 		case XCB_BUTTON_INDEX_2:
-			get_window_size(&width, &height);
-			x = ev->event_x - (width - canvas_width) / 2;
-			y = ev->event_y - (height - canvas_height) / 2;
-			if (x >= 0 && x < canvas_width && y >= 0 && y < canvas_height)
-				paint_brush.color = pixels[y*canvas_width+x];
+			drag_begin(ev->event_x, ev->event_y);
 			break;
 		case XCB_BUTTON_INDEX_3:
-			if (draw_mode == DM_NONE) {
-				draw_mode = DM_ERASE;
-				add_point(ev->event_x, ev->event_y, erase_brush);
-			}
+			if (window_coord_to_canvas_coord(ev->event_x, ev->event_y, &x, &y))
+				set_color(cpx[y*cwidth+x]);
 			break;
 		case XCB_BUTTON_INDEX_4:
-			if (paint_brush.size < 50)
-				paint_brush.size += 1;
+			brush_size += 2;
 			break;
 		case XCB_BUTTON_INDEX_5:
-			if (paint_brush.size > 2)
-				paint_brush.size -= 1;
+			brush_size -= (brush_size > 10) ? 2 : 0;
 			break;
 	}
 }
@@ -456,25 +477,45 @@ h_button_press(xcb_button_press_event_t *ev)
 static void
 h_motion_notify(xcb_motion_notify_event_t *ev)
 {
-	switch (draw_mode) {
-		case DM_PAINT:
-			add_point(ev->event_x, ev->event_y, paint_brush);
-			break;
-		case DM_ERASE:
-			add_point(ev->event_x, ev->event_y, erase_brush);
-			break;
+	int32_t x, y;
+
+	if (painting && window_coord_to_canvas_coord(ev->event_x, ev->event_y, &x, &y)) {
+		add_point_to_canvas(x, y, color, brush_size);
+	} else if (dragging) {
+		drag_update(ev->event_x, ev->event_y);
 	}
 }
 
 static void
 h_button_release(xcb_button_release_event_t *ev)
 {
-	switch (ev->detail) {
-		case XCB_BUTTON_INDEX_1:
-		case XCB_BUTTON_INDEX_3:
-			draw_mode = DM_NONE;
-			break;
+	if (ev->detail == XCB_BUTTON_INDEX_1) {
+		painting = 0;
+	} else if (ev->detail == XCB_BUTTON_INDEX_2) {
+		drag_end();
 	}
+}
+
+static void
+h_configure_notify(xcb_configure_notify_event_t *ev)
+{
+	if (wwidth == ev->width && wheight == ev->height)
+		return;
+
+	xcb_image_destroy(image);
+
+	wwidth = ev->width;
+	wheight = ev->height;
+	px = calloc(wwidth * wheight, sizeof(uint32_t));
+
+	image = xcb_image_create_native(
+		conn, wwidth, wheight, XCB_IMAGE_FORMAT_Z_PIXMAP, screen->root_depth,
+		px, sizeof(uint32_t) * wwidth * wheight, (uint8_t *)(px)
+	);
+
+	prepare_render();
+	xcb_image_put(conn, window, gc, image, 0, 0, 0);
+	xcb_flush(conn);
 }
 
 static void
@@ -497,7 +538,7 @@ main(int argc, char **argv)
 			switch ((*argv)[1]) {
 				case 'h': usage(); break;
 				case 'v': version(); break;
-				case 'f': startup_mode = SM_FULLSCREEN; break;
+				case 'f': start_in_fullscreen = 1; break;
 				case 'l': --argc; loadpath = enotnull(*++argv, "path"); break;
 				default: die("invalid option %s", *argv); break;
 			}
@@ -507,39 +548,30 @@ main(int argc, char **argv)
 	}
 
 	create_window();
+	set_color(palette[0]);
+	set_brush_size(15);
 
-	if (NULL == loadpath) create_canvas(DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT);
+	if (NULL == loadpath) create_canvas(600, 600);
 	else load_canvas(loadpath);
 
 	while ((ev = xcb_wait_for_event(conn))) {
 		switch (ev->response_type & ~0x80) {
-			case XCB_CLIENT_MESSAGE:
-				h_client_message((xcb_client_message_event_t *)(ev));
-				break;
-			case XCB_EXPOSE:
-				h_expose((xcb_expose_event_t *)(ev));
-				break;
-			case XCB_KEY_PRESS:
-				h_key_press((xcb_key_press_event_t *)(ev));
-				break;
-			case XCB_BUTTON_PRESS:
-				h_button_press((xcb_button_press_event_t *)(ev));
-				break;
-			case XCB_MOTION_NOTIFY:
-				h_motion_notify((xcb_motion_notify_event_t *)(ev));
-				break;
-			case XCB_BUTTON_RELEASE:
-				h_button_release((xcb_button_release_event_t *)(ev));
-				break;
-			case XCB_MAPPING_NOTIFY:
-				h_mapping_notify((xcb_mapping_notify_event_t *)(ev));
-				break;
+			case XCB_CLIENT_MESSAGE:     h_client_message((void *)(ev)); break;
+			case XCB_EXPOSE:             h_expose((void *)(ev)); break;
+			case XCB_KEY_PRESS:          h_key_press((void *)(ev)); break;
+			case XCB_KEY_RELEASE:        h_key_release((void *)(ev)); break;
+			case XCB_BUTTON_PRESS:       h_button_press((void *)(ev)); break;
+			case XCB_MOTION_NOTIFY:      h_motion_notify((void *)(ev)); break;
+			case XCB_BUTTON_RELEASE:     h_button_release((void *)(ev)); break;
+			case XCB_CONFIGURE_NOTIFY:   h_configure_notify((void *)(ev)); break;
+			case XCB_MAPPING_NOTIFY:     h_mapping_notify((void *)(ev)); break;
 		}
 
 		free(ev);
 	}
 
 	destroy_window();
+	destroy_canvas();
 
 	return 0;
 }
