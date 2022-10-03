@@ -317,6 +317,7 @@ set_color(uint32_t c)
 static void
 set_brush_size(int32_t bs)
 {
+	if (bs < 10) bs = 10;
 	previous_brush_size = brush_size;
 	brush_size = bs;
 }
@@ -487,10 +488,10 @@ h_button_press(xcb_button_press_event_t *ev)
 				set_color(cpx[y*cwidth+x]);
 			break;
 		case XCB_BUTTON_INDEX_4:
-			brush_size += 2;
+			set_brush_size(brush_size + 2);
 			break;
 		case XCB_BUTTON_INDEX_5:
-			brush_size -= (brush_size > 10) ? 2 : 0;
+			set_brush_size(brush_size - 2);
 			break;
 	}
 }
