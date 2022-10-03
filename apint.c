@@ -40,6 +40,7 @@
 #include <setjmp.h>
 #include <math.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_cursor.h>
 #include <xcb/xcb_image.h>
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
@@ -53,6 +54,8 @@ static xcb_window_t window;
 static xcb_gcontext_t gc;
 static xcb_image_t *image;
 static xcb_key_symbols_t *ksyms;
+static xcb_cursor_context_t *cctx;
+static xcb_cursor_t chand, carrow;
 static xcb_point_t dbp, dcp;
 static int start_in_fullscreen, painting, dragging;
 static int32_t wwidth, wheight, cwidth, cheight;
@@ -114,6 +117,11 @@ create_window(void)
 	if (NULL == (screen = xcb_setup_roots_iterator(xcb_get_setup(conn)).data))
 		die("can't get default screen");
 
+	if (xcb_cursor_context_new(conn, screen, &cctx) != 0)
+		die("can't create cursor context");
+
+	chand = xcb_cursor_load_cursor(cctx, "fleur");
+	carrow = xcb_cursor_load_cursor(cctx, "left_ptr");
 	wwidth = wheight = 600;
 
 	if (NULL == (px = calloc(wwidth * wheight, sizeof(uint32_t))))
@@ -183,7 +191,10 @@ static void
 destroy_window(void)
 {
 	xcb_free_gc(conn, gc);
+	xcb_free_cursor(conn, chand);
+	xcb_free_cursor(conn, carrow);
 	xcb_key_symbols_free(ksyms);
+	xcb_cursor_context_free(cctx);
 	xcb_image_destroy(image);
 	xcb_disconnect(conn);
 }
@@ -316,6 +327,9 @@ drag_begin(int16_t x, int16_t y)
 	dragging = 1;
 	dbp.x = dbp.x - dcp.x + x;
 	dbp.y = dbp.y - dcp.y + y;
+
+	xcb_change_window_attributes(conn, window, XCB_CW_CURSOR, &chand);
+	xcb_flush(conn);
 }
 
 static void
@@ -333,6 +347,9 @@ static void
 drag_end(void)
 {
 	dragging = 0;
+
+	xcb_change_window_attributes(conn, window, XCB_CW_CURSOR, &carrow);
+	xcb_flush(conn);
 }
 
 static inline uint8_t
