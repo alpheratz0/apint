@@ -344,9 +344,12 @@ drag_update(int32_t x, int32_t y)
 }
 
 static void
-drag_end(void)
+drag_end(int32_t x, int32_t y)
 {
 	dragging = 0;
+
+	dcp.x = x;
+	dcp.y = y;
 
 	xcb_change_window_attributes(conn, window, XCB_CW_CURSOR, &carrow);
 	xcb_flush(conn);
@@ -509,7 +512,7 @@ h_button_release(xcb_button_release_event_t *ev)
 	if (ev->detail == XCB_BUTTON_INDEX_1) {
 		painting = 0;
 	} else if (ev->detail == XCB_BUTTON_INDEX_2) {
-		drag_end();
+		drag_end(ev->event_x, ev->event_y);
 	}
 }
 
