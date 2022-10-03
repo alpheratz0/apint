@@ -426,6 +426,7 @@ h_client_message(xcb_client_message_event_t *ev)
 	/* https://www.x.org/docs/ICCCM/icccm.pdf */
 	if (ev->data.data32[0] == get_atom("WM_DELETE_WINDOW")) {
 		destroy_window();
+		destroy_canvas();
 		exit(0);
 	}
 }
