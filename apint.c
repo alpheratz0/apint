@@ -122,7 +122,7 @@ create_window(void)
 
 	chand = xcb_cursor_load_cursor(cctx, "fleur");
 	carrow = xcb_cursor_load_cursor(cctx, "left_ptr");
-	wwidth = wheight = 600;
+	wwidth = 800, wheight = 600;
 
 	if (NULL == (px = calloc(wwidth * wheight, sizeof(uint32_t))))
 		die("error while calling malloc, no memory available");
@@ -574,7 +574,7 @@ main(int argc, char **argv)
 	set_color(palette[0]);
 	set_brush_size(15);
 
-	if (NULL == loadpath) create_canvas(600, 600);
+	if (NULL == loadpath) create_canvas(800, 600);
 	else load_canvas(loadpath);
 
 	while ((ev = xcb_wait_for_event(conn))) {
