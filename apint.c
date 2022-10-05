@@ -60,7 +60,7 @@ static xcb_point_t dbp, dcp;
 static int start_in_fullscreen, painting, dragging;
 static int32_t wwidth, wheight, cwidth, cheight;
 static int32_t previous_brush_size, brush_size;
-static uint32_t *px, *cpx, color;
+static uint32_t *px, *cpx, color, previous_color;
 static uint32_t pi, palette[] = {
 	0xff0000, 0x00ff00, 0x0000ff, 0xffff00,
 	0xff00ff, 0x00ffff, 0x000000, 0xffffff
@@ -311,6 +311,7 @@ prepare_render(void)
 static void
 set_color(uint32_t c)
 {
+	previous_color = color;
 	color = c;
 }
 
@@ -464,7 +465,7 @@ h_key_release(xcb_key_release_event_t *ev)
 	key = xcb_key_symbols_get_keysym(ksyms, ev->detail, 0);
 
 	if (key == XKB_KEY_d) {
-		set_color(palette[pi]);
+		set_color(previous_color);
 	} else if (key == XKB_KEY_s || key == XKB_KEY_b) {
 		set_brush_size(previous_brush_size);
 	}
