@@ -60,7 +60,7 @@ static xcb_point_t dbp, dcp;
 static int start_in_fullscreen, painting, dragging;
 static int32_t wwidth, wheight, cwidth, cheight;
 static int32_t previous_brush_size, brush_size;
-static uint32_t *px, *cpx, color, previous_color;
+static uint32_t *wpx, *cpx, color, previous_color;
 static uint32_t pi, palette[] = {
 	0xff0000, 0x00ff00, 0x0000ff, 0xffff00,
 	0xff00ff, 0x00ffff, 0x000000, 0xffffff
@@ -124,7 +124,7 @@ create_window(void)
 	carrow = xcb_cursor_load_cursor(cctx, "left_ptr");
 	wwidth = 800, wheight = 600;
 
-	if (NULL == (px = calloc(wwidth * wheight, sizeof(uint32_t))))
+	if (NULL == (wpx = calloc(wwidth * wheight, sizeof(uint32_t))))
 		die("error while calling malloc, no memory available");
 
 	ksyms = xcb_key_symbols_alloc(conn);
@@ -150,7 +150,7 @@ create_window(void)
 
 	image = xcb_image_create_native(
 		conn, wwidth, wheight, XCB_IMAGE_FORMAT_Z_PIXMAP, screen->root_depth,
-		px, sizeof(uint32_t) * wwidth * wheight, (uint8_t *)(px)
+		wpx, sizeof(uint32_t) * wwidth * wheight, (uint8_t *)(wpx)
 	);
 
 	xcb_change_property(
@@ -292,7 +292,7 @@ prepare_render(void)
 {
 	int32_t x, y, ox, oy;
 
-	memset(px, 0, sizeof(uint32_t) * wwidth * wheight);
+	memset(wpx, 0, sizeof(uint32_t) * wwidth * wheight);
 
 	ox = (dcp.x - dbp.x) + (wwidth - cwidth) / 2;
 	oy = (dcp.y - dbp.y) + (wheight - cheight) / 2;
@@ -303,7 +303,7 @@ prepare_render(void)
 		for (x = 0; x < cwidth; ++x) {
 			if ((x+ox) < 0 || (x+ox) >= wwidth)
 				continue;
-			px[(y+oy)*wwidth+(x+ox)] = cpx[y*cwidth+x];
+			wpx[(y+oy)*wwidth+(x+ox)] = cpx[y*cwidth+x];
 		}
 	}
 }
@@ -529,11 +529,11 @@ h_configure_notify(xcb_configure_notify_event_t *ev)
 
 	wwidth = ev->width;
 	wheight = ev->height;
-	px = calloc(wwidth * wheight, sizeof(uint32_t));
+	wpx = calloc(wwidth * wheight, sizeof(uint32_t));
 
 	image = xcb_image_create_native(
 		conn, wwidth, wheight, XCB_IMAGE_FORMAT_Z_PIXMAP, screen->root_depth,
-		px, sizeof(uint32_t) * wwidth * wheight, (uint8_t *)(px)
+		wpx, sizeof(uint32_t) * wwidth * wheight, (uint8_t *)(wpx)
 	);
 
 	prepare_render();
