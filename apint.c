@@ -154,8 +154,8 @@ create_window(void)
 	);
 
 	xcb_change_property(
-		conn, XCB_PROP_MODE_REPLACE, window, XCB_ATOM_WM_NAME,
-		XCB_ATOM_STRING, 8, sizeof("apint") - 1, "apint"
+		conn, XCB_PROP_MODE_REPLACE, window, get_atom("_NET_WM_NAME"),
+		get_atom("UTF8_STRING"), 8, sizeof("apint") - 1, "apint"
 	);
 
 	xcb_change_property(
