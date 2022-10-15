@@ -478,7 +478,7 @@ h_button_press(xcb_button_press_event_t *ev)
 
 	switch (ev->detail) {
 		case XCB_BUTTON_INDEX_1:
-			if (window_coord_to_canvas_coord(ev->event_x, ev->event_y, &x, &y))
+			if (!dragging && window_coord_to_canvas_coord(ev->event_x, ev->event_y, &x, &y))
 				painting = 1, add_point_to_canvas(x, y, color, brush_size);
 			break;
 		case XCB_BUTTON_INDEX_2:
@@ -502,10 +502,10 @@ h_motion_notify(xcb_motion_notify_event_t *ev)
 {
 	int32_t x, y;
 
-	if (painting && window_coord_to_canvas_coord(ev->event_x, ev->event_y, &x, &y)) {
-		add_point_to_canvas(x, y, color, brush_size);
-	} else if (dragging) {
+	if (dragging) {
 		drag_update(ev->event_x, ev->event_y);
+	} else if (painting && window_coord_to_canvas_coord(ev->event_x, ev->event_y, &x, &y)) {
+		add_point_to_canvas(x, y, color, brush_size);
 	}
 }
 
