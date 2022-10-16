@@ -1,0 +1,3 @@
+Currently apint works with xcb-image which transfers the X11
+data through sockets, it is quite inefficent and causes high cpu load,
+moving to xcb-shm and using xcb-image as fallback should fix this problem.
