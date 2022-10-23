@@ -273,7 +273,7 @@ load_canvas(const char *path)
 
 	rows = png_malloc(png, sizeof(png_byte *) * cheight);
 
-	for (y = 0; y < cheight; y++)
+	for (y = 0; y < cheight; ++y)
 		rows[y] = png_malloc(png, png_get_rowbytes(png, pnginfo));
 
 	png_read_image(png, rows);
