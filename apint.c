@@ -224,7 +224,7 @@ load_canvas(const char *path)
 	FILE *fp;
 	png_struct *png;
 	png_info *pnginfo;
-	png_byte *row, bit_depth;
+	png_byte **rows, bit_depth;
 	int16_t x, y;
 
 	if (NULL == (fp = fopen(path, "rb")))
@@ -244,6 +244,8 @@ load_canvas(const char *path)
 	create_canvas(png_get_image_width(png, pnginfo), png_get_image_height(png, pnginfo));
 
 	bit_depth = png_get_bit_depth(png, pnginfo);
+
+	png_set_interlace_handling(png);
 
 	if (bit_depth == 16)
 		png_set_strip_16(png);
@@ -269,22 +271,27 @@ load_canvas(const char *path)
 
 	png_read_update_info(png, pnginfo);
 
-	row = malloc(png_get_rowbytes(png, pnginfo));
+	rows = png_malloc(png, sizeof(png_byte *) * cheight);
+
+	for (y = 0; y < cheight; y++)
+		rows[y] = png_malloc(png, png_get_rowbytes(png, pnginfo));
+
+	png_read_image(png, rows);
 
 	for (y = 0; y < cheight; ++y) {
-		png_read_row(png, row, NULL);
 		for (x = 0; x < cwidth; ++x) {
-			cpx[y*cwidth+x] = row[x*4+0] << 16 |
-				row[x*4+1] << 8 |
-				row[x*4+2] << 0;
+			cpx[y*cwidth+x] = rows[y][x*4+0] << 16 |
+				rows[y][x*4+1] << 8 |
+				rows[y][x*4+2];
 		}
+		png_free(png, rows[y]);
 	}
 
+	png_free(png, rows);
 	png_read_end(png, NULL);
 	png_free_data(png, pnginfo, PNG_FREE_ALL, -1);
 	png_destroy_read_struct(&png, NULL, NULL);
 	fclose(fp);
-	free(row);
 }
 
 static void
