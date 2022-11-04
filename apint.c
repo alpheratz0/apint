@@ -267,6 +267,8 @@ load_canvas(const char *path)
 			png_set_filler(png, 0xff, PNG_FILLER_AFTER);
 			png_set_gray_to_rgb(png);
 			break;
+		case PNG_COLOR_TYPE_GRAY_ALPHA:
+			png_set_gray_to_rgb(png);
 	}
 
 	png_read_update_info(png, pnginfo);
@@ -280,7 +282,9 @@ load_canvas(const char *path)
 
 	for (y = 0; y < cheight; ++y) {
 		for (x = 0; x < cwidth; ++x) {
-			cpx[y*cwidth+x] = rows[y][x*4+0] << 16 |
+			if (rows[y][x*4+3] == 0)
+				cpx[y*cwidth+x] = 0xffffff;
+			else cpx[y*cwidth+x] = rows[y][x*4+0] << 16 |
 				rows[y][x*4+1] << 8 |
 				rows[y][x*4+2];
 		}
