@@ -45,6 +45,7 @@
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
+#include <libsaveas/saveas.h>
 
 #define UNUSED __attribute__((unused))
 
@@ -299,6 +300,55 @@ load_canvas(const char *path)
 }
 
 static void
+save_canvas(const char *path)
+{
+	int x, y;
+	FILE *fp;
+	png_struct *png;
+	png_info *pnginfo;
+	png_byte *row;
+
+	if (NULL == (fp = fopen(path, "wb")))
+		die("fopen failed: %s", strerror(errno));
+
+	if (NULL == (png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL)))
+		die("png_create_write_struct failed");
+
+	if (NULL == (pnginfo = png_create_info_struct(png)))
+		die("png_create_info_struct failed");
+
+	if (setjmp(png_jmpbuf(png)) != 0)
+		die("aborting due to libpng error");
+
+	png_init_io(png, fp);
+
+	png_set_IHDR(
+		png, pnginfo, cwidth, cheight, 8, PNG_COLOR_TYPE_RGB,
+		PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE
+	);
+
+	png_write_info(png, pnginfo);
+	png_set_compression_level(png, 3);
+
+	row = malloc(cwidth * 3);
+
+	for (y = 0; y < cheight; ++y) {
+		for (x = 0; x < cwidth; ++x) {
+			row[x*3+0] = (cpx[y*cwidth+x] & 0xff0000) >> 16;
+			row[x*3+1] = (cpx[y*cwidth+x] & 0xff00) >> 8;
+			row[x*3+2] = cpx[y*cwidth+x] & 0xff;
+		}
+		png_write_row(png, row);
+	}
+
+	png_write_end(png, NULL);
+	png_free_data(png, pnginfo, PNG_FREE_ALL, -1);
+	png_destroy_write_struct(&png, NULL);
+	fclose(fp);
+	free(row);
+}
+
+static void
 prepare_render(void)
 {
 	int32_t x, y, ox, oy;
@@ -453,6 +503,7 @@ h_expose(UNUSED xcb_expose_event_t *ev)
 static void
 h_key_press(xcb_key_press_event_t *ev)
 {
+	const char *savepath;
 	xcb_keysym_t key;
 
 	key = xcb_key_symbols_get_keysym(ksyms, ev->detail, 0);
@@ -460,7 +511,12 @@ h_key_press(xcb_key_press_event_t *ev)
 	if (key == XKB_KEY_d) {
 		set_color(0xffffff);
 	} else if (key == XKB_KEY_s) {
-		set_brush_size(10);
+		if (ev->state & XCB_MOD_MASK_CONTROL) {
+			if (saveas_show_popup(&savepath) == SAVEAS_STATUS_OK)
+				save_canvas(savepath);
+		} else {
+			set_brush_size(10);
+		}
 	} else if (key == XKB_KEY_b) {
 		set_brush_size(40);
 	} else if (key >= XKB_KEY_1 && key < (XKB_KEY_1 + sizeof(palette)/sizeof(palette[0]))) {
