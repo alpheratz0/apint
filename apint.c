@@ -45,7 +45,7 @@
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
-#include <libsaveas/saveas.h>
+#include <saveas/saveas.h>
 
 #define UNUSED __attribute__((unused))
 
