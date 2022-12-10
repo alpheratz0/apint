@@ -1,4 +1,4 @@
-.Dd September 18, 2022
+.Dd December 10, 2022
 .Dt APINT 1
 .Sh NAME
 .Nm apint
@@ -26,6 +26,25 @@ load png file
 .Bl -tag -width indent
 .It draw over a freshly taken screenshot
 apint -f -l $(xscreenshot -p -d $(mktemp -d))
+.El
+.Sh CONTROLS
+.Bl -bullet -compact -width indent
+.It
+hold the left mouse button down to paint
+.It
+hold the middle mouse button down to move the image around
+.It
+press the right mouse button down to pick the color where the mouse is
+.It
+scroll up/down to change the brush size
+.It
+hold D to change to the delete brush
+.It
+hold S for a small brush, hold B for a big one
+.It
+press number keys (1-..) to change the brush color
+.It
+press Ctrl+S to save the image
 .El
 .Sh SEE ALSO
 .Xr X 7
