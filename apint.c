@@ -399,6 +399,22 @@ undo(void)
 }
 
 static void
+undo_history_push(void)
+{
+	size_t i;
+	if (undo_buffer == NULL)
+		undo_buffer = malloc(cwidth * cheight * sizeof(uint32_t));
+	for (i = 0; i < (size_t)(cwidth * cheight); ++i)
+		undo_buffer[i] = cpx[i];
+}
+
+static void
+destroy_undo_history(void)
+{
+	free(undo_buffer);
+}
+
+static void
 drag_begin(int16_t x, int16_t y)
 {
 	dragging = 1;
@@ -504,6 +520,7 @@ h_client_message(xcb_client_message_event_t *ev)
 	if (ev->data.data32[0] == get_atom("WM_DELETE_WINDOW")) {
 		destroy_window();
 		destroy_canvas();
+		destroy_undo_history();
 		exit(0);
 	}
 }
@@ -557,15 +574,13 @@ h_key_release(xcb_key_release_event_t *ev)
 static void
 h_button_press(xcb_button_press_event_t *ev)
 {
-	int32_t x, y, i;
+	int32_t x, y;
 
 	switch (ev->detail) {
 		case XCB_BUTTON_INDEX_1:
 			if (!dragging && window_coord_to_canvas_coord(ev->event_x, ev->event_y, &x, &y)) {
-				if (undo_buffer == NULL) undo_buffer = malloc(cwidth*cheight*sizeof(uint32_t));
-				for (i = 0; i < cwidth*cheight; ++i)
-					undo_buffer[i] = cpx[i];
 				painting = 1;
+				undo_history_push();
 				add_point_to_canvas(x, y, color, brush_size);
 			}
 			break;
@@ -683,6 +698,7 @@ main(int argc, char **argv)
 
 	destroy_window();
 	destroy_canvas();
+	destroy_undo_history();
 
 	return 0;
 }
