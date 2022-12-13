@@ -61,6 +61,7 @@ static xcb_point_t dbp, dcp;
 static int start_in_fullscreen, painting, dragging;
 static int32_t wwidth, wheight, cwidth, cheight;
 static int32_t previous_brush_size, brush_size;
+static uint32_t *undo_buffer;
 static uint32_t *wpx, *cpx, color, previous_color;
 static uint32_t pi, palette[] = {
 	0xff0000, 0x00ff00, 0x0000ff, 0xffff00,
@@ -385,6 +386,19 @@ set_brush_size(int32_t bs)
 }
 
 static void
+undo(void)
+{
+	uint32_t *tmp;
+	if (NULL == undo_buffer) return;
+	tmp = undo_buffer;
+	undo_buffer = cpx;
+	cpx = tmp;
+	prepare_render();
+	xcb_image_put(conn, window, gc, image, 0, 0, 0);
+	xcb_flush(conn);
+}
+
+static void
 drag_begin(int16_t x, int16_t y)
 {
 	dragging = 1;
@@ -521,6 +535,8 @@ h_key_press(xcb_key_press_event_t *ev)
 		set_brush_size(40);
 	} else if (key >= XKB_KEY_1 && key < (XKB_KEY_1 + sizeof(palette)/sizeof(palette[0]))) {
 		set_color(palette[pi = (key - XKB_KEY_1)]);
+	} else if (key == XKB_KEY_z && ev->state & XCB_MOD_MASK_CONTROL) {
+		undo();
 	}
 }
 
@@ -541,12 +557,17 @@ h_key_release(xcb_key_release_event_t *ev)
 static void
 h_button_press(xcb_button_press_event_t *ev)
 {
-	int32_t x, y;
+	int32_t x, y, i;
 
 	switch (ev->detail) {
 		case XCB_BUTTON_INDEX_1:
-			if (!dragging && window_coord_to_canvas_coord(ev->event_x, ev->event_y, &x, &y))
-				painting = 1, add_point_to_canvas(x, y, color, brush_size);
+			if (!dragging && window_coord_to_canvas_coord(ev->event_x, ev->event_y, &x, &y)) {
+				if (undo_buffer == NULL) undo_buffer = malloc(cwidth*cheight*sizeof(uint32_t));
+				for (i = 0; i < cwidth*cheight; ++i)
+					undo_buffer[i] = cpx[i];
+				painting = 1;
+				add_point_to_canvas(x, y, color, brush_size);
+			}
 			break;
 		case XCB_BUTTON_INDEX_2:
 			drag_begin(ev->event_x, ev->event_y);
