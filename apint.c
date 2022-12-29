@@ -390,25 +390,17 @@ set_brush_size(int32_t bs)
 static void
 undo(void)
 {
-	// TODO: fix undo feature (maybe keep another xcb_image_t?)
-	/* uint32_t *tmp; */
-	/* if (NULL == undo_buffer) return; */
-	/* tmp = undo_buffer; */
-	/* undo_buffer = cpx; */
-	/* cpx = tmp; */
-	/* prepare_render(); */
-	/* xcb_image_put(conn, window, gc, image, 0, 0, 0); */
-	/* xcb_flush(conn); */
+	if (NULL == undo_buffer) return;
+	memcpy(cpx, undo_buffer, cwidth*cheight*sizeof(uint32_t));
+	swap_buffers();
 }
 
 static void
 undo_history_push(void)
 {
-	/* size_t i; */
-	/* if (undo_buffer == NULL) */
-	/* 	undo_buffer = malloc(cwidth * cheight * sizeof(uint32_t)); */
-	/* for (i = 0; i < (size_t)(cwidth * cheight); ++i) */
-	/* 	undo_buffer[i] = cpx[i]; */
+	if (undo_buffer == NULL)
+		undo_buffer = malloc(cwidth * cheight * sizeof(uint32_t));
+	memcpy(undo_buffer, cpx, cwidth*cheight*sizeof(uint32_t));
 }
 
 static void
