@@ -62,7 +62,7 @@ static int start_in_fullscreen, painting, dragging;
 static int32_t wwidth, wheight, cwidth, cheight;
 static int32_t previous_brush_size, brush_size;
 static uint32_t *undo_buffer;
-static uint32_t *wpx, *cpx, color, previous_color;
+static uint32_t *cpx, color, previous_color;
 static uint32_t pi, palette[] = {
 	0xff0000, 0x00ff00, 0x0000ff, 0xffff00,
 	0xff00ff, 0x00ffff, 0x000000, 0xffffff
@@ -126,9 +126,6 @@ create_window(void)
 	carrow = xcb_cursor_load_cursor(cctx, "left_ptr");
 	wwidth = 800, wheight = 600;
 
-	if (NULL == (wpx = calloc(wwidth * wheight, sizeof(uint32_t))))
-		die("error while calling malloc, no memory available");
-
 	ksyms = xcb_key_symbols_alloc(conn);
 	window = xcb_generate_id(conn);
 	gc = xcb_generate_id(conn);
@@ -136,8 +133,9 @@ create_window(void)
 	xcb_create_window_aux(
 		conn, screen->root_depth, window, screen->root, 0, 0,
 		wwidth, wheight, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
-		screen->root_visual, XCB_CW_EVENT_MASK,
+		screen->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
 		(const xcb_create_window_value_list_t []) {{
+			.background_pixel = 0,
 			.event_mask = XCB_EVENT_MASK_EXPOSURE |
 			              XCB_EVENT_MASK_KEY_PRESS |
 			              XCB_EVENT_MASK_KEY_RELEASE |
@@ -149,11 +147,6 @@ create_window(void)
 	);
 
 	xcb_create_gc(conn, gc, window, 0, NULL);
-
-	image = xcb_image_create_native(
-		conn, wwidth, wheight, XCB_IMAGE_FORMAT_Z_PIXMAP, screen->root_depth,
-		wpx, sizeof(uint32_t) * wwidth * wheight, (uint8_t *)(wpx)
-	);
 
 	xcb_change_property(
 		conn, XCB_PROP_MODE_REPLACE, window, get_atom("_NET_WM_NAME"),
@@ -197,7 +190,6 @@ destroy_window(void)
 	xcb_free_cursor(conn, carrow);
 	xcb_key_symbols_free(ksyms);
 	xcb_cursor_context_free(cctx);
-	xcb_image_destroy(image);
 	xcb_disconnect(conn);
 }
 
@@ -212,12 +204,17 @@ create_canvas(int32_t width, int32_t height)
 		die("error while calling malloc, no memory available");
 
 	memset(cpx, 255, sizeof(uint32_t) * cwidth * cheight);
+
+	image = xcb_image_create_native(
+		conn, width, height, XCB_IMAGE_FORMAT_Z_PIXMAP, screen->root_depth,
+		cpx, sizeof(uint32_t) * width * height, (uint8_t *)(cpx)
+	);
 }
 
 static void
 destroy_canvas(void)
 {
-	free(cpx);
+	xcb_image_destroy(image);
 }
 
 static void
@@ -350,24 +347,29 @@ save_canvas(const char *path)
 }
 
 static void
-prepare_render(void)
+clear_inverse_area(int16_t x, int16_t y, uint16_t width, uint16_t height)
 {
-	int32_t x, y, ox, oy;
+	if (x < wwidth && (x+width) > 0 && y < wheight && (y+height) > 0) {
+		if (y > 0) xcb_clear_area(conn, 0, window, 0, 0, wwidth, y);
+		if (x > 0) xcb_clear_area(conn, 0, window, 0, 0, x, wheight);
+		if ((y+height) < wheight) xcb_clear_area(conn, 0, window, 0, y+height, wwidth, wheight-y+height);
+		if ((x+width) < wwidth) xcb_clear_area(conn, 0, window, x+width, 0, wwidth-x+width, wheight);
+	} else {
+		xcb_clear_area(conn, 0, window, 0, 0, wwidth, wheight);
+	}
+}
 
-	memset(wpx, 0, sizeof(uint32_t) * wwidth * wheight);
+static void
+swap_buffers(void)
+{
+	int32_t ox, oy;
 
 	ox = (dcp.x - dbp.x) + (wwidth - cwidth) / 2;
 	oy = (dcp.y - dbp.y) + (wheight - cheight) / 2;
 
-	for (y = 0; y < cheight; ++y) {
-		if ((y+oy) < 0 || (y+oy) >= wheight)
-			continue;
-		for (x = 0; x < cwidth; ++x) {
-			if ((x+ox) < 0 || (x+ox) >= wwidth)
-				continue;
-			wpx[(y+oy)*wwidth+(x+ox)] = cpx[y*cwidth+x];
-		}
-	}
+	clear_inverse_area(ox, oy, cwidth, cheight);
+	xcb_image_put(conn, window, gc, image, ox, oy, 0);
+	xcb_flush(conn);
 }
 
 static void
@@ -388,24 +390,25 @@ set_brush_size(int32_t bs)
 static void
 undo(void)
 {
-	uint32_t *tmp;
-	if (NULL == undo_buffer) return;
-	tmp = undo_buffer;
-	undo_buffer = cpx;
-	cpx = tmp;
-	prepare_render();
-	xcb_image_put(conn, window, gc, image, 0, 0, 0);
-	xcb_flush(conn);
+	// TODO: fix undo feature (maybe keep another xcb_image_t?)
+	/* uint32_t *tmp; */
+	/* if (NULL == undo_buffer) return; */
+	/* tmp = undo_buffer; */
+	/* undo_buffer = cpx; */
+	/* cpx = tmp; */
+	/* prepare_render(); */
+	/* xcb_image_put(conn, window, gc, image, 0, 0, 0); */
+	/* xcb_flush(conn); */
 }
 
 static void
 undo_history_push(void)
 {
-	size_t i;
-	if (undo_buffer == NULL)
-		undo_buffer = malloc(cwidth * cheight * sizeof(uint32_t));
-	for (i = 0; i < (size_t)(cwidth * cheight); ++i)
-		undo_buffer[i] = cpx[i];
+	/* size_t i; */
+	/* if (undo_buffer == NULL) */
+	/* 	undo_buffer = malloc(cwidth * cheight * sizeof(uint32_t)); */
+	/* for (i = 0; i < (size_t)(cwidth * cheight); ++i) */
+	/* 	undo_buffer[i] = cpx[i]; */
 }
 
 static void
@@ -431,9 +434,7 @@ drag_update(int32_t x, int32_t y)
 	dcp.x = x;
 	dcp.y = y;
 
-	prepare_render();
-	xcb_image_put(conn, window, gc, image, 0, 0, 0);
-	xcb_flush(conn);
+	swap_buffers();
 }
 
 static void
@@ -493,9 +494,7 @@ add_point_to_canvas(int32_t x, int32_t y, uint32_t color, int32_t size)
 		}
 	}
 
-	prepare_render();
-	xcb_image_put(conn, window, gc, image, 0, 0, 0);
-	xcb_flush(conn);
+	swap_buffers();
 }
 
 static void
@@ -518,8 +517,8 @@ h_client_message(xcb_client_message_event_t *ev)
 	/* check if the wm sent a delete window message */
 	/* https://www.x.org/docs/ICCCM/icccm.pdf */
 	if (ev->data.data32[0] == get_atom("WM_DELETE_WINDOW")) {
-		destroy_window();
 		destroy_canvas();
+		destroy_window();
 		destroy_undo_history();
 		exit(0);
 	}
@@ -528,7 +527,7 @@ h_client_message(xcb_client_message_event_t *ev)
 static void
 h_expose(UNUSED xcb_expose_event_t *ev)
 {
-	xcb_image_put(conn, window, gc, image, 0, 0, 0);
+	swap_buffers();
 }
 
 static void
@@ -628,20 +627,8 @@ h_configure_notify(xcb_configure_notify_event_t *ev)
 	if (wwidth == ev->width && wheight == ev->height)
 		return;
 
-	xcb_image_destroy(image);
-
 	wwidth = ev->width;
 	wheight = ev->height;
-	wpx = calloc(wwidth * wheight, sizeof(uint32_t));
-
-	image = xcb_image_create_native(
-		conn, wwidth, wheight, XCB_IMAGE_FORMAT_Z_PIXMAP, screen->root_depth,
-		wpx, sizeof(uint32_t) * wwidth * wheight, (uint8_t *)(wpx)
-	);
-
-	prepare_render();
-	xcb_image_put(conn, window, gc, image, 0, 0, 0);
-	xcb_flush(conn);
 }
 
 static void
@@ -696,8 +683,8 @@ main(int argc, char **argv)
 		free(ev);
 	}
 
-	destroy_window();
 	destroy_canvas();
+	destroy_window();
 	destroy_undo_history();
 
 	return 0;
