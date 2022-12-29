@@ -39,6 +39,9 @@
 #include <string.h>
 #include <setjmp.h>
 #include <math.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <xcb/shm.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_cursor.h>
 #include <xcb/xcb_image.h>
@@ -49,20 +52,35 @@
 
 #define UNUSED __attribute__((unused))
 
+typedef struct {
+	int shm;
+	int width;
+	int height;
+	uint32_t *px;
+	xcb_gcontext_t gc;
+	union {
+		struct {
+			int id;
+			xcb_shm_seg_t seg;
+			xcb_pixmap_t pixmap;
+		} shm;
+		xcb_image_t *image;
+	} x;
+} XCanvas;
+
 static xcb_connection_t *conn;
 static xcb_screen_t *screen;
 static xcb_window_t window;
-static xcb_gcontext_t gc;
-static xcb_image_t *image;
+static XCanvas canvas;
 static xcb_key_symbols_t *ksyms;
 static xcb_cursor_context_t *cctx;
 static xcb_cursor_t chand, carrow;
 static xcb_point_t dbp, dcp;
 static int start_in_fullscreen, painting, dragging;
-static int32_t wwidth, wheight, cwidth, cheight;
+static int32_t wwidth, wheight;
 static int32_t previous_brush_size, brush_size;
 static uint32_t *undo_buffer;
-static uint32_t *cpx, color, previous_color;
+static uint32_t color, previous_color;
 static uint32_t pi, palette[] = {
 	0xff0000, 0x00ff00, 0x0000ff, 0xffff00,
 	0xff00ff, 0x00ffff, 0x000000, 0xffffff
@@ -110,6 +128,35 @@ get_atom(const char *name)
 	return atom;
 }
 
+static int
+is_shm_extension_available(void)
+{
+	xcb_generic_error_t *error;
+	xcb_shm_query_version_cookie_t cookie;
+	xcb_shm_query_version_reply_t *reply;
+
+	cookie = xcb_shm_query_version(conn);
+	reply = xcb_shm_query_version_reply(conn, cookie, &error);
+
+	if (NULL != error) {
+		if (NULL != reply)
+			free(reply);
+		free(error);
+		return 0;
+	}
+
+	if (NULL != reply) {
+		if (reply->shared_pixmaps == 0) {
+			free(reply);
+			return 0;
+		}
+		free(reply);
+		return 1;
+	}
+
+	return 0;
+}
+
 static void
 create_window(void)
 {
@@ -128,7 +175,6 @@ create_window(void)
 
 	ksyms = xcb_key_symbols_alloc(conn);
 	window = xcb_generate_id(conn);
-	gc = xcb_generate_id(conn);
 
 	xcb_create_window_aux(
 		conn, screen->root_depth, window, screen->root, 0, 0,
@@ -145,8 +191,6 @@ create_window(void)
 			              XCB_EVENT_MASK_STRUCTURE_NOTIFY
 		}}
 	);
-
-	xcb_create_gc(conn, gc, window, 0, NULL);
 
 	xcb_change_property(
 		conn, XCB_PROP_MODE_REPLACE, window, get_atom("_NET_WM_NAME"),
@@ -185,7 +229,6 @@ create_window(void)
 static void
 destroy_window(void)
 {
-	xcb_free_gc(conn, gc);
 	xcb_free_cursor(conn, chand);
 	xcb_free_cursor(conn, carrow);
 	xcb_key_symbols_free(ksyms);
@@ -196,25 +239,61 @@ destroy_window(void)
 static void
 create_canvas(int32_t width, int32_t height)
 {
-	cwidth = width;
-	cheight = height;
-	cpx = malloc(sizeof(uint32_t) * cwidth * cheight);
+	canvas.width = width;
+	canvas.height = height;
+	canvas.shm = is_shm_extension_available();
+	canvas.gc = xcb_generate_id(conn);
 
-	if (NULL == cpx)
-		die("error while calling malloc, no memory available");
+	xcb_create_gc(conn, canvas.gc, window, 0, NULL);
 
-	memset(cpx, 255, sizeof(uint32_t) * cwidth * cheight);
+	if (canvas.shm) {
+		canvas.x.shm.seg = xcb_generate_id(conn);
+		canvas.x.shm.pixmap = xcb_generate_id(conn);
+		canvas.x.shm.id = shmget(IPC_PRIVATE,
+				width * height * sizeof(uint32_t), IPC_CREAT | 0600);
 
-	image = xcb_image_create_native(
-		conn, width, height, XCB_IMAGE_FORMAT_Z_PIXMAP, screen->root_depth,
-		cpx, sizeof(uint32_t) * width * height, (uint8_t *)(cpx)
-	);
+		if (canvas.x.shm.id < 0)
+			die("shmget failed");
+
+		canvas.px = shmat(canvas.x.shm.id, NULL, 0);
+
+		if ((void *)(-1) == canvas.px) {
+			shmctl(canvas.x.shm.id, IPC_RMID, NULL);
+			die("shmat failed");
+		}
+
+		xcb_shm_attach(conn, canvas.x.shm.seg, canvas.x.shm.id, 0);
+		shmctl(canvas.x.shm.id, IPC_RMID, NULL);
+		memset(canvas.px, 255, sizeof(uint32_t) * width * height);
+		xcb_shm_create_pixmap(conn, canvas.x.shm.pixmap, window, width, height,
+				screen->root_depth, canvas.x.shm.seg, 0);
+	} else {
+		canvas.px = malloc(sizeof(uint32_t) * width * height);
+
+		if (NULL == canvas.px)
+			die("error while calling malloc, no memory available");
+
+		memset(canvas.px, 255, sizeof(uint32_t) * width * height);
+
+		canvas.x.image = xcb_image_create_native(
+			conn, width, height, XCB_IMAGE_FORMAT_Z_PIXMAP, screen->root_depth,
+			canvas.px, sizeof(uint32_t) * width * height, (uint8_t *)(canvas.px)
+		);
+	}
 }
 
 static void
 destroy_canvas(void)
 {
-	xcb_image_destroy(image);
+	xcb_free_gc(conn, canvas.gc);
+	if (canvas.shm) {
+		shmctl(canvas.x.shm.id, IPC_RMID, NULL);
+		xcb_shm_detach(conn, canvas.x.shm.seg);
+		shmdt(canvas.px);
+		xcb_free_pixmap(conn, canvas.x.shm.pixmap);
+	} else {
+		xcb_image_destroy(canvas.x.image);
+	}
 }
 
 static void
@@ -272,18 +351,18 @@ load_canvas(const char *path)
 
 	png_read_update_info(png, pnginfo);
 
-	rows = png_malloc(png, sizeof(png_byte *) * cheight);
+	rows = png_malloc(png, sizeof(png_byte *) * canvas.height);
 
-	for (y = 0; y < cheight; ++y)
+	for (y = 0; y < canvas.height; ++y)
 		rows[y] = png_malloc(png, png_get_rowbytes(png, pnginfo));
 
 	png_read_image(png, rows);
 
-	for (y = 0; y < cheight; ++y) {
-		for (x = 0; x < cwidth; ++x) {
+	for (y = 0; y < canvas.height; ++y) {
+		for (x = 0; x < canvas.width; ++x) {
 			if (rows[y][x*4+3] == 0)
-				cpx[y*cwidth+x] = 0xffffff;
-			else cpx[y*cwidth+x] = rows[y][x*4+0] << 16 |
+				canvas.px[y*canvas.width+x] = 0xffffff;
+			else canvas.px[y*canvas.width+x] = rows[y][x*4+0] << 16 |
 				rows[y][x*4+1] << 8 |
 				rows[y][x*4+2];
 		}
@@ -321,20 +400,20 @@ save_canvas(const char *path)
 	png_init_io(png, fp);
 
 	png_set_IHDR(
-		png, pnginfo, cwidth, cheight, 8, PNG_COLOR_TYPE_RGB,
+		png, pnginfo, canvas.width, canvas.height, 8, PNG_COLOR_TYPE_RGB,
 		PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE
 	);
 
 	png_write_info(png, pnginfo);
 	png_set_compression_level(png, 3);
 
-	row = malloc(cwidth * 3);
+	row = malloc(canvas.width * 3);
 
-	for (y = 0; y < cheight; ++y) {
-		for (x = 0; x < cwidth; ++x) {
-			row[x*3+0] = (cpx[y*cwidth+x] & 0xff0000) >> 16;
-			row[x*3+1] = (cpx[y*cwidth+x] & 0xff00) >> 8;
-			row[x*3+2] = cpx[y*cwidth+x] & 0xff;
+	for (y = 0; y < canvas.height; ++y) {
+		for (x = 0; x < canvas.width; ++x) {
+			row[x*3+0] = (canvas.px[y*canvas.width+x] & 0xff0000) >> 16;
+			row[x*3+1] = (canvas.px[y*canvas.width+x] & 0xff00) >> 8;
+			row[x*3+2] = canvas.px[y*canvas.width+x] & 0xff;
 		}
 		png_write_row(png, row);
 	}
@@ -364,11 +443,16 @@ swap_buffers(void)
 {
 	int32_t ox, oy;
 
-	ox = (dcp.x - dbp.x) + (wwidth - cwidth) / 2;
-	oy = (dcp.y - dbp.y) + (wheight - cheight) / 2;
+	ox = (dcp.x - dbp.x) + (wwidth - canvas.width) / 2;
+	oy = (dcp.y - dbp.y) + (wheight - canvas.height) / 2;
 
-	clear_inverse_area(ox, oy, cwidth, cheight);
-	xcb_image_put(conn, window, gc, image, ox, oy, 0);
+	clear_inverse_area(ox, oy, canvas.width, canvas.height);
+	if (canvas.shm) {
+		xcb_copy_area(conn, canvas.x.shm.pixmap, window, canvas.gc, 0, 0,
+				ox, oy, canvas.width, canvas.height);
+	} else {
+		xcb_image_put(conn, window, canvas.gc, canvas.x.image, ox, oy, 0);
+	}
 	xcb_flush(conn);
 }
 
@@ -391,7 +475,7 @@ static void
 undo(void)
 {
 	if (NULL == undo_buffer) return;
-	memcpy(cpx, undo_buffer, cwidth*cheight*sizeof(uint32_t));
+	memcpy(canvas.px, undo_buffer, canvas.width*canvas.height*sizeof(uint32_t));
 	swap_buffers();
 }
 
@@ -399,8 +483,8 @@ static void
 undo_history_push(void)
 {
 	if (undo_buffer == NULL)
-		undo_buffer = malloc(cwidth * cheight * sizeof(uint32_t));
-	memcpy(undo_buffer, cpx, cwidth*cheight*sizeof(uint32_t));
+		undo_buffer = malloc(canvas.width * canvas.height * sizeof(uint32_t));
+	memcpy(undo_buffer, canvas.px, canvas.width*canvas.height*sizeof(uint32_t));
 }
 
 static void
@@ -463,10 +547,10 @@ color_lerp(uint32_t from, uint32_t to, double v)
 static int
 window_coord_to_canvas_coord(int32_t wx, int32_t wy, int32_t *cx, int32_t *cy)
 {
-	*cx = (dbp.x - dcp.x) + wx - (wwidth - cwidth) / 2;
-	*cy = (dbp.y - dcp.y) + wy - (wheight - cheight) / 2;
+	*cx = (dbp.x - dcp.x) + wx - (wwidth - canvas.width) / 2;
+	*cy = (dbp.y - dcp.y) + wy - (wheight - canvas.height) / 2;
 
-	return *cx >= 0 && *cx < cwidth && *cy >= 0 && *cy < cheight;
+	return *cx >= 0 && *cx < canvas.width && *cy >= 0 && *cy < canvas.height;
 }
 
 static void
@@ -475,14 +559,14 @@ add_point_to_canvas(int32_t x, int32_t y, uint32_t color, int32_t size)
 	int32_t dx, dy;
 
 	for (dy = -size; dy < size; ++dy) {
-		if ((y+dy) < 0 || (y+dy) >= cheight)
+		if ((y+dy) < 0 || (y+dy) >= canvas.height)
 			continue;
 		for (dx = -size; dx < size; ++dx) {
-			if ((x+dx) < 0 || (x+dx) >= cwidth)
+			if ((x+dx) < 0 || (x+dx) >= canvas.width)
 				continue;
 			if (dy*dy+dx*dx < size*size)
-				cpx[(y+dy)*cwidth+(x+dx)] = color_lerp(color,
-						cpx[(y+dy)*cwidth+(x+dx)], sqrt(dy*dy+dx*dx)/size);
+				canvas.px[(y+dy)*canvas.width+(x+dx)] = color_lerp(color,
+						canvas.px[(y+dy)*canvas.width+(x+dx)], sqrt(dy*dy+dx*dx)/size);
 		}
 	}
 
@@ -580,7 +664,7 @@ h_button_press(xcb_button_press_event_t *ev)
 			break;
 		case XCB_BUTTON_INDEX_3:
 			if (window_coord_to_canvas_coord(ev->event_x, ev->event_y, &x, &y))
-				set_color(cpx[y*cwidth+x]);
+				set_color(canvas.px[y*canvas.width+x]);
 			break;
 		case XCB_BUTTON_INDEX_4:
 			set_brush_size(brush_size + 2);
