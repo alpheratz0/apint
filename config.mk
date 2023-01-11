@@ -1,4 +1,4 @@
-# Copyright (C) 2022 <alpheratz99@protonmail.com>
+# Copyright (C) 2022-2023 <alpheratz99@protonmail.com>
 # This program is free software.
 
 VERSION   = 0.4.1
