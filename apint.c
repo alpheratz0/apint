@@ -161,7 +161,7 @@ xatom(const char *name)
 }
 
 static int
-xisshmavailable(void)
+xtestmitshm(void)
 {
 	xcb_generic_error_t *error;
 	xcb_shm_query_version_cookie_t cookie;
@@ -251,7 +251,7 @@ xcanvasinit(int32_t width, int32_t height)
 {
 	canvas.width = width;
 	canvas.height = height;
-	canvas.shm = xisshmavailable();
+	canvas.shm = xtestmitshm();
 	canvas.gc = xcb_generate_id(win.conn);
 	xcb_create_gc(win.conn, canvas.gc, win.id, 0, NULL);
 	if (canvas.shm) {
@@ -307,7 +307,8 @@ xcanvasload(const char *path)
 	int16_t x, y;
 	if (NULL == (fp = fopen(path, "rb")))
 		die("failed to open file %s: %s", path, strerror(errno));
-	if (NULL == (png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL)))
+	if (NULL == (png = png_create_read_struct(PNG_LIBPNG_VER_STRING,
+					NULL, NULL, NULL)))
 		die("png_create_read_struct failed");
 	if (NULL == (pnginfo = png_create_info_struct(png)))
 		die("png_create_info_struct failed");
@@ -371,17 +372,17 @@ xcanvassave(const char *path)
 	png_byte *row;
 	if (NULL == (fp = fopen(path, "wb")))
 		die("fopen failed: %s", strerror(errno));
-	if (NULL == (png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL)))
+	if (NULL == (png = png_create_write_struct(PNG_LIBPNG_VER_STRING,
+					NULL, NULL, NULL)))
 		die("png_create_write_struct failed");
 	if (NULL == (pnginfo = png_create_info_struct(png)))
 		die("png_create_info_struct failed");
 	if (setjmp(png_jmpbuf(png)) != 0)
 		die("aborting due to libpng error");
 	png_init_io(png, fp);
-	png_set_IHDR(
-		png, pnginfo, canvas.width, canvas.height, 8, PNG_COLOR_TYPE_RGB,
-		PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE
-	);
+	png_set_IHDR(png, pnginfo, canvas.width, canvas.height, 8,
+			PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
+	        PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
 	png_write_info(png, pnginfo);
 	png_set_compression_level(png, 3);
 	row = malloc(canvas.width * 3);
