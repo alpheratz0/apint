@@ -358,6 +358,7 @@ xcanvasload(const char *path)
 	png_free(png, rows);
 	png_read_end(png, NULL);
 	png_free_data(png, pnginfo, PNG_FREE_ALL, -1);
+	png_destroy_info_struct(png, &pnginfo);
 	png_destroy_read_struct(&png, NULL, NULL);
 	fclose(fp);
 }
@@ -396,6 +397,7 @@ xcanvassave(const char *path)
 	}
 	png_write_end(png, NULL);
 	png_free_data(png, pnginfo, PNG_FREE_ALL, -1);
+	png_destroy_info_struct(png, &pnginfo);
 	png_destroy_write_struct(&png, NULL);
 	fclose(fp);
 	free(row);
