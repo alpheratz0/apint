@@ -1,4 +1,4 @@
-.Dd December 13, 2022
+.Dd January 14, 2023
 .Dt APINT 1
 .Sh NAME
 .Nm apint
@@ -7,6 +7,8 @@
 .Nm
 .Op Fl fhv
 .Op Fl l Ar file
+.Op Fl W Ar width
+.Op Fl H Ar height
 .Sh DESCRIPTION
 The
 .Nm
@@ -21,6 +23,10 @@ show usage
 display the program version
 .It Fl l
 load png file
+.It Fl W
+create a canvas of that width
+.It Fl H
+create a canvas of that height
 .El
 .Sh EXAMPLES
 .Bl -tag -width indent
