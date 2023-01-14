@@ -548,7 +548,7 @@ xcanvasaddpoint(int32_t x, int32_t y, uint32_t color, int32_t size)
 static void
 usage(void)
 {
-	puts("usage: apint [-fhv] [-l file]");
+	puts("usage: apint [-fhv] [-l file] [-W width] [-H height]");
 	exit(0);
 }
 
@@ -684,7 +684,9 @@ main(int argc, char **argv)
 {
 	const char *loadpath;
 	xcb_generic_event_t *ev;
+	int width, height;
 
+	width = 800, height = 600;
 	loadpath = NULL;
 
 	while (++argv, --argc > 0) {
@@ -694,6 +696,8 @@ main(int argc, char **argv)
 				case 'v': version(); break;
 				case 'f': start_options.fullscreen = 1; break;
 				case 'l': --argc; loadpath = enotnull(*++argv, "path"); break;
+				case 'W': --argc; width = atoi(enotnull(*++argv, "width")); break;
+				case 'H': --argc; height = atoi(enotnull(*++argv, "height")); break;
 				default: die("invalid option %s", *argv); break;
 			}
 		} else {
@@ -701,10 +705,13 @@ main(int argc, char **argv)
 		}
 	}
 
+	if (width <= 5 || height <= 5)
+		die("invalid width/height");
+
 	xwininit();
 	stateinit();
 
-	if (NULL == loadpath) xcanvasinit(800, 600);
+	if (NULL == loadpath) xcanvasinit(width, height);
 	else xcanvasload(loadpath);
 
 	while ((ev = xcb_wait_for_event(win.conn))) {
