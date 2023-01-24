@@ -47,6 +47,7 @@
 #include <saveas/saveas.h>
 
 #define UNUSED __attribute__((unused))
+#define LEN(arr) (sizeof(arr) / sizeof(arr[0]))
 
 typedef struct {
 	int shm;
@@ -150,13 +151,17 @@ xatom(const char *name)
 	xcb_generic_error_t *error;
 	xcb_intern_atom_cookie_t cookie;
 	xcb_intern_atom_reply_t *reply;
+
 	cookie = xcb_intern_atom(win.conn, 0, strlen(name), name);
 	reply = xcb_intern_atom_reply(win.conn, cookie, &error);
+
 	if (NULL != error)
 		die("xcb_intern_atom failed with error code: %hhu",
 				error->error_code);
+
 	atom = reply->atom;
 	free(reply);
+
 	return atom;
 }
 
@@ -166,14 +171,17 @@ xtestmitshm(void)
 	xcb_generic_error_t *error;
 	xcb_shm_query_version_cookie_t cookie;
 	xcb_shm_query_version_reply_t *reply;
+
 	cookie = xcb_shm_query_version(win.conn);
 	reply = xcb_shm_query_version_reply(win.conn, cookie, &error);
+
 	if (NULL != error) {
 		if (NULL != reply)
 			free(reply);
 		free(error);
 		return 0;
 	}
+
 	if (NULL != reply) {
 		if (reply->shared_pixmaps == 0) {
 			free(reply);
@@ -182,6 +190,7 @@ xtestmitshm(void)
 		free(reply);
 		return 1;
 	}
+
 	return 0;
 }
 
@@ -191,16 +200,20 @@ xwininit(void)
 	win.conn = xcb_connect(NULL, NULL);
 	if (xcb_connection_has_error(win.conn))
 		die("can't open display");
+
 	win.screen = xcb_setup_roots_iterator(xcb_get_setup(win.conn)).data;
 	if (NULL == win.screen)
 		die("can't get default screen");
+
 	if (xcb_cursor_context_new(win.conn, win.screen, &win.cctx) != 0)
 		die("can't create cursor context");
+
 	win.chand = xcb_cursor_load_cursor(win.cctx, "fleur");
 	win.carrow = xcb_cursor_load_cursor(win.cctx, "left_ptr");
 	win.width = 800, win.height = 600;
 	win.ksyms = xcb_key_symbols_alloc(win.conn);
 	win.id = xcb_generate_id(win.conn);
+
 	xcb_create_window_aux(
 		win.conn, win.screen->root_depth, win.id, win.screen->root, 0, 0,
 		win.width, win.height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
@@ -216,22 +229,34 @@ xwininit(void)
 			              XCB_EVENT_MASK_STRUCTURE_NOTIFY
 		}}
 	);
+
 	xcb_change_property(win.conn, XCB_PROP_MODE_REPLACE, win.id,
 		xatom("_NET_WM_NAME"), xatom("UTF8_STRING"), 8,
-		strlen("apint"), "apint");
+		strlen("apint"), "apint"
+	);
+
 	xcb_change_property(win.conn, XCB_PROP_MODE_REPLACE, win.id,
 		XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8,
-		strlen("apint\0apint\0"), "apint\0apint\0");
+		strlen("apint\0apint\0"), "apint\0apint\0"
+	);
+
 	xcb_change_property(win.conn, XCB_PROP_MODE_REPLACE, win.id,
 		xatom("WM_PROTOCOLS"), XCB_ATOM_ATOM, 32, 1,
-		(const xcb_atom_t []) { xatom("WM_DELETE_WINDOW") });
+		(const xcb_atom_t []) { xatom("WM_DELETE_WINDOW") }
+	);
+
 	xcb_change_property(win.conn, XCB_PROP_MODE_REPLACE, win.id,
 		xatom("_NET_WM_WINDOW_OPACITY"), XCB_ATOM_CARDINAL, 32, 1,
-		(const uint8_t []) { 0xff, 0xff, 0xff, 0xff });
-	if (start_options.fullscreen)
+		(const uint8_t []) { 0xff, 0xff, 0xff, 0xff }
+	);
+
+	if (start_options.fullscreen) {
 		xcb_change_property(win.conn, XCB_PROP_MODE_REPLACE, win.id,
 			xatom("_NET_WM_STATE"), XCB_ATOM_ATOM, 32, 1,
-			(const xcb_atom_t []) { xatom("_NET_WM_STATE_FULLSCREEN") });
+			(const xcb_atom_t []) { xatom("_NET_WM_STATE_FULLSCREEN") }
+		);
+	}
+
 	xcb_map_window(win.conn, win.id);
 	xcb_flush(win.conn);
 }
@@ -253,33 +278,42 @@ xcanvasinit(int32_t width, int32_t height)
 	canvas.height = height;
 	canvas.shm = xtestmitshm();
 	canvas.gc = xcb_generate_id(win.conn);
+
 	xcb_create_gc(win.conn, canvas.gc, win.id, 0, NULL);
+
 	if (canvas.shm) {
 		canvas.x.shm.seg = xcb_generate_id(win.conn);
 		canvas.x.shm.pixmap = xcb_generate_id(win.conn);
 		canvas.x.shm.id = shmget(IPC_PRIVATE,
-			width * height * sizeof(uint32_t), IPC_CREAT | 0600);
+			width * height * sizeof(uint32_t), IPC_CREAT | 0600
+		);
+
 		if (canvas.x.shm.id < 0)
 			die("shmget failed");
+
 		canvas.px = shmat(canvas.x.shm.id, NULL, 0);
 		if ((void *)(-1) == canvas.px) {
 			shmctl(canvas.x.shm.id, IPC_RMID, NULL);
 			die("shmat failed");
 		}
+
 		xcb_shm_attach(win.conn, canvas.x.shm.seg, canvas.x.shm.id, 0);
 		shmctl(canvas.x.shm.id, IPC_RMID, NULL);
 		memset(canvas.px, 255, sizeof(uint32_t) * width * height);
 		xcb_shm_create_pixmap(win.conn, canvas.x.shm.pixmap, win.id,
-			width, height, win.screen->root_depth, canvas.x.shm.seg, 0);
+			width, height, win.screen->root_depth, canvas.x.shm.seg, 0
+		);
 	} else {
 		canvas.px = malloc(sizeof(uint32_t) * width * height);
 		if (NULL == canvas.px)
 			die("error while calling malloc, no memory available");
+
 		memset(canvas.px, 255, sizeof(uint32_t) * width * height);
 		canvas.x.image = xcb_image_create_native(
 			win.conn, width, height, XCB_IMAGE_FORMAT_Z_PIXMAP,
 			win.screen->root_depth, canvas.px,
-			sizeof(uint32_t) * width * height, (uint8_t *)(canvas.px));
+			sizeof(uint32_t) * width * height, (uint8_t *)(canvas.px)
+		);
 	}
 }
 
@@ -305,24 +339,33 @@ xcanvasload(const char *path)
 	png_info *pnginfo;
 	png_byte **rows, bit_depth;
 	int16_t x, y;
+
 	if (NULL == (fp = fopen(path, "rb")))
 		die("failed to open file %s: %s", path, strerror(errno));
+
 	if (NULL == (png = png_create_read_struct(PNG_LIBPNG_VER_STRING,
 					NULL, NULL, NULL)))
 		die("png_create_read_struct failed");
+
 	if (NULL == (pnginfo = png_create_info_struct(png)))
 		die("png_create_info_struct failed");
+
 	if (setjmp(png_jmpbuf(png)) != 0)
 		die("aborting due to libpng error");
+
 	png_init_io(png, fp);
 	png_read_info(png, pnginfo);
 	xcanvasinit(png_get_image_width(png, pnginfo), png_get_image_height(png, pnginfo));
+
 	bit_depth = png_get_bit_depth(png, pnginfo);
 	png_set_interlace_handling(png);
+
 	if (bit_depth == 16)
 		png_set_strip_16(png);
+
 	if (png_get_valid(png, pnginfo, PNG_INFO_tRNS))
 		png_set_tRNS_to_alpha(png);
+
 	switch (png_get_color_type(png, pnginfo)) {
 		case PNG_COLOR_TYPE_RGB:
 			png_set_filler(png, 0xff, PNG_FILLER_AFTER);
@@ -340,11 +383,16 @@ xcanvasload(const char *path)
 		case PNG_COLOR_TYPE_GRAY_ALPHA:
 			png_set_gray_to_rgb(png);
 	}
+
 	png_read_update_info(png, pnginfo);
+
 	rows = png_malloc(png, sizeof(png_byte *) * canvas.height);
+
 	for (y = 0; y < canvas.height; ++y)
 		rows[y] = png_malloc(png, png_get_rowbytes(png, pnginfo));
+
 	png_read_image(png, rows);
+
 	for (y = 0; y < canvas.height; ++y) {
 		for (x = 0; x < canvas.width; ++x) {
 			if (rows[y][x*4+3] == 0)
@@ -355,6 +403,7 @@ xcanvasload(const char *path)
 		}
 		png_free(png, rows[y]);
 	}
+
 	png_free(png, rows);
 	png_read_end(png, NULL);
 	png_free_data(png, pnginfo, PNG_FREE_ALL, -1);
@@ -371,22 +420,31 @@ xcanvassave(const char *path)
 	png_struct *png;
 	png_info *pnginfo;
 	png_byte *row;
+
 	if (NULL == (fp = fopen(path, "wb")))
 		die("fopen failed: %s", strerror(errno));
+
 	if (NULL == (png = png_create_write_struct(PNG_LIBPNG_VER_STRING,
 					NULL, NULL, NULL)))
 		die("png_create_write_struct failed");
+
 	if (NULL == (pnginfo = png_create_info_struct(png)))
 		die("png_create_info_struct failed");
+
 	if (setjmp(png_jmpbuf(png)) != 0)
 		die("aborting due to libpng error");
+
 	png_init_io(png, fp);
 	png_set_IHDR(png, pnginfo, canvas.width, canvas.height, 8,
-			PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
-	        PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
+		PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
+		PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE
+	);
+
 	png_write_info(png, pnginfo);
 	png_set_compression_level(png, 3);
+
 	row = malloc(canvas.width * 3);
+
 	for (y = 0; y < canvas.height; ++y) {
 		for (x = 0; x < canvas.width; ++x) {
 			row[x*3+0] = (canvas.px[y*canvas.width+x] & 0xff0000) >> 16;
@@ -395,6 +453,7 @@ xcanvassave(const char *path)
 		}
 		png_write_row(png, row);
 	}
+
 	png_write_end(png, NULL);
 	png_free_data(png, pnginfo, PNG_FREE_ALL, -1);
 	png_destroy_info_struct(png, &pnginfo);
@@ -406,15 +465,30 @@ xcanvassave(const char *path)
 static void
 xclearinvarea(int16_t x, int16_t y, uint16_t width, uint16_t height)
 {
-	if (x < win.width && (x+width) > 0 && y < win.height && (y+height) > 0) {
-		if (y > 0) xcb_clear_area(win.conn, 0, win.id, 0, 0, win.width, y);
-		if (x > 0) xcb_clear_area(win.conn, 0, win.id, 0, 0, x, win.height);
-		if ((y+height) < win.height) xcb_clear_area(win.conn, 0, win.id,
-				0, y+height, win.width, win.height-y+height);
-		if ((x+width) < win.width) xcb_clear_area(win.conn, 0, win.id,
-				x+width, 0, win.width-x+width, win.height);
-	} else {
+	if (x >= win.width || (x + width) <= 0
+			|| y >= win.height || (y + height) <= 0) {
 		xcb_clear_area(win.conn, 0, win.id, 0, 0, win.width, win.height);
+		return;
+	}
+
+	if (y > 0)
+		xcb_clear_area(win.conn, 0, win.id, 0, 0, win.width, y);
+
+	if (x > 0)
+		xcb_clear_area(win.conn, 0, win.id, 0, 0, x, win.height);
+
+	if (y + height < win.height) {
+		xcb_clear_area(
+			win.conn, 0, win.id, 0, y + height,
+			win.width, win.height - y + height
+		);
+	}
+
+	if (x + width < win.width) {
+		xcb_clear_area(
+			win.conn, 0, win.id, x + width, 0,
+			win.width - x + width, win.height
+		);
 	}
 }
 
@@ -422,18 +496,27 @@ static void
 xswapbuffers(void)
 {
 	int32_t ox, oy;
+
 	ox = (state.drag_offset.p1.x - state.drag_offset.p0.x) +
 		(win.width - canvas.width) / 2;
+
 	oy = (state.drag_offset.p1.y - state.drag_offset.p0.y) +
 		(win.height - canvas.height) / 2;
+
 	xclearinvarea(ox, oy, canvas.width, canvas.height);
+
 	if (canvas.shm) {
-		xcb_copy_area(win.conn, canvas.x.shm.pixmap, win.id,
-			canvas.gc, 0, 0, ox, oy, canvas.width, canvas.height);
+		xcb_copy_area(
+			win.conn, canvas.x.shm.pixmap, win.id,
+			canvas.gc, 0, 0, ox, oy, canvas.width, canvas.height
+		);
 	} else {
-		xcb_image_put(win.conn, win.id, canvas.gc,
-			canvas.x.image, ox, oy, 0);
+		xcb_image_put(
+			win.conn, win.id, canvas.gc,
+			canvas.x.image, ox, oy, 0
+		);
 	}
+
 	xcb_flush(win.conn);
 }
 
@@ -455,17 +538,30 @@ set_brush_size(int32_t bs)
 static void
 undo(void)
 {
-	if (NULL == state.undo_buffer) return;
-	memcpy(canvas.px, state.undo_buffer, canvas.width*canvas.height*sizeof(uint32_t));
+	if (NULL == state.undo_buffer)
+		return;
+
+	memcpy(
+		canvas.px, state.undo_buffer,
+		canvas.width * canvas.height * sizeof(uint32_t)
+	);
+
 	xswapbuffers();
 }
 
 static void
 undohistorypush(void)
 {
-	if (state.undo_buffer == NULL)
-		state.undo_buffer = malloc(canvas.width * canvas.height * sizeof(uint32_t));
-	memcpy(state.undo_buffer, canvas.px, canvas.width*canvas.height*sizeof(uint32_t));
+	if (state.undo_buffer == NULL) {
+		state.undo_buffer = malloc(
+			canvas.width * canvas.height * sizeof(uint32_t)
+		);
+	}
+
+	memcpy(
+		state.undo_buffer, canvas.px,
+		canvas.width * canvas.height * sizeof(uint32_t)
+	);
 }
 
 static void
@@ -512,18 +608,24 @@ static uint32_t
 color_lerp(uint32_t from, uint32_t to, double v)
 {
 	uint8_t r, g, b;
+
 	v = v > 1 ? 1 : v < 0 ? 0 : v;
 	r = blerp((from >> 16) & 0xff, (to >> 16) & 0xff, v);
 	g = blerp((from >> 8) & 0xff, (to >> 8) & 0xff, v);
 	b = blerp(from & 0xff, to & 0xff, v);
+
 	return (r << 16) | (g << 8) | b;
 }
 
 static int
 xwin2canvascoord(int32_t wx, int32_t wy, int32_t *cx, int32_t *cy)
 {
-	*cx = (state.drag_offset.p0.x - state.drag_offset.p1.x) + wx - (win.width - canvas.width) / 2;
-	*cy = (state.drag_offset.p0.y - state.drag_offset.p1.y) + wy - (win.height - canvas.height) / 2;
+	*cx = (state.drag_offset.p0.x - state.drag_offset.p1.x)
+		+ wx - (win.width - canvas.width) / 2;
+
+	*cy = (state.drag_offset.p0.y - state.drag_offset.p1.y)
+		+ wy - (win.height - canvas.height) / 2;
+
 	return *cx >= 0 && *cx < canvas.width && *cy >= 0 && *cy < canvas.height;
 }
 
@@ -531,17 +633,22 @@ static void
 xcanvasaddpoint(int32_t x, int32_t y, uint32_t color, int32_t size)
 {
 	int32_t dx, dy;
+
 	for (dy = -size; dy < size; ++dy) {
 		if ((y+dy) < 0 || (y+dy) >= canvas.height)
 			continue;
 		for (dx = -size; dx < size; ++dx) {
 			if ((x+dx) < 0 || (x+dx) >= canvas.width)
 				continue;
-			if (dy*dy+dx*dx < size*size)
-				canvas.px[(y+dy)*canvas.width+(x+dx)] = color_lerp(color,
-						canvas.px[(y+dy)*canvas.width+(x+dx)], sqrt(dy*dy+dx*dx)/size);
+			if (dy*dy+dx*dx < size*size) {
+				canvas.px[(y + dy) * canvas.width + (x + dx)] = color_lerp(
+					color, canvas.px[(y + dy) * canvas.width + (x + dx)],
+					sqrt(dy * dy + dx * dx) / size
+				);
+			}
 		}
 	}
+
 	xswapbuffers();
 }
 
@@ -583,7 +690,9 @@ h_key_press(xcb_key_press_event_t *ev)
 {
 	const char *savepath;
 	xcb_keysym_t key;
+
 	key = xcb_key_symbols_get_keysym(win.ksyms, ev->detail, 0);
+
 	if (key == XKB_KEY_d) {
 		set_color(0xffffff);
 	} else if (key == XKB_KEY_s) {
@@ -595,7 +704,7 @@ h_key_press(xcb_key_press_event_t *ev)
 		}
 	} else if (key == XKB_KEY_b) {
 		set_brush_size(40);
-	} else if (key >= XKB_KEY_1 && key < (XKB_KEY_1 + sizeof(state.palette.colors)/sizeof(state.palette.colors[0]))) {
+	} else if (key >= XKB_KEY_1 && key < (XKB_KEY_1 + LEN(state.palette.colors))) {
 		set_color(state.palette.colors[state.palette.index = (key - XKB_KEY_1)]);
 	} else if (key == XKB_KEY_z && ev->state & XCB_MOD_MASK_CONTROL) {
 		undo();
@@ -606,7 +715,9 @@ static void
 h_key_release(xcb_key_release_event_t *ev)
 {
 	xcb_keysym_t key;
+
 	key = xcb_key_symbols_get_keysym(win.ksyms, ev->detail, 0);
+
 	if (key == XKB_KEY_d) {
 		set_color(state.previous_color);
 	} else if (key == XKB_KEY_s || key == XKB_KEY_b) {
@@ -618,6 +729,7 @@ static void
 h_button_press(xcb_button_press_event_t *ev)
 {
 	int32_t x, y;
+
 	switch (ev->detail) {
 		case XCB_BUTTON_INDEX_1:
 			if (!state.dragging && xwin2canvascoord(ev->event_x, ev->event_y, &x, &y)) {
@@ -646,6 +758,7 @@ static void
 h_motion_notify(xcb_motion_notify_event_t *ev)
 {
 	int32_t x, y;
+
 	if (state.dragging) {
 		drag_update(ev->event_x, ev->event_y);
 	} else if (state.painting && xwin2canvascoord(ev->event_x, ev->event_y, &x, &y)) {
@@ -668,6 +781,7 @@ h_configure_notify(xcb_configure_notify_event_t *ev)
 {
 	if (win.width == ev->width && win.height == ev->height)
 		return;
+
 	win.width = ev->width;
 	win.height = ev->height;
 }
