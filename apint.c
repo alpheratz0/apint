@@ -530,7 +530,7 @@ set_color(uint32_t c)
 static void
 set_brush_size(int32_t bs)
 {
-	if (bs < 10) bs = 10;
+	if (bs < 5) bs = 5;
 	state.previous_brush_size = state.brush_size;
 	state.brush_size = bs;
 }
