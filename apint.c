@@ -274,6 +274,10 @@ xwindestroy(void)
 static void
 xcanvasinit(int32_t width, int32_t height)
 {
+	size_t szpx;
+
+	szpx = width * height * sizeof(uint32_t);
+
 	canvas.width = width;
 	canvas.height = height;
 	canvas.shm = xtestmitshm();
@@ -284,14 +288,13 @@ xcanvasinit(int32_t width, int32_t height)
 	if (canvas.shm) {
 		canvas.x.shm.seg = xcb_generate_id(win.conn);
 		canvas.x.shm.pixmap = xcb_generate_id(win.conn);
-		canvas.x.shm.id = shmget(IPC_PRIVATE,
-			width * height * sizeof(uint32_t), IPC_CREAT | 0600
-		);
+		canvas.x.shm.id = shmget(IPC_PRIVATE, szpx, IPC_CREAT | 0600);
 
 		if (canvas.x.shm.id < 0)
 			die("shmget failed");
 
 		canvas.px = shmat(canvas.x.shm.id, NULL, 0);
+
 		if ((void *)(-1) == canvas.px) {
 			shmctl(canvas.x.shm.id, IPC_RMID, NULL);
 			die("shmat failed");
@@ -299,20 +302,23 @@ xcanvasinit(int32_t width, int32_t height)
 
 		xcb_shm_attach(win.conn, canvas.x.shm.seg, canvas.x.shm.id, 0);
 		shmctl(canvas.x.shm.id, IPC_RMID, NULL);
-		memset(canvas.px, 255, sizeof(uint32_t) * width * height);
+		memset(canvas.px, 255, szpx);
+
 		xcb_shm_create_pixmap(win.conn, canvas.x.shm.pixmap, win.id,
 			width, height, win.screen->root_depth, canvas.x.shm.seg, 0
 		);
 	} else {
-		canvas.px = malloc(sizeof(uint32_t) * width * height);
+		canvas.px = malloc(szpx);
+
 		if (NULL == canvas.px)
 			die("error while calling malloc, no memory available");
 
-		memset(canvas.px, 255, sizeof(uint32_t) * width * height);
+		memset(canvas.px, 255, szpx);
+
 		canvas.x.image = xcb_image_create_native(
 			win.conn, width, height, XCB_IMAGE_FORMAT_Z_PIXMAP,
 			win.screen->root_depth, canvas.px,
-			sizeof(uint32_t) * width * height, (uint8_t *)(canvas.px)
+			szpx, (uint8_t *)(canvas.px)
 		);
 	}
 }
@@ -321,6 +327,7 @@ static void
 xcanvasdestroy(void)
 {
 	xcb_free_gc(win.conn, canvas.gc);
+
 	if (canvas.shm) {
 		shmctl(canvas.x.shm.id, IPC_RMID, NULL);
 		xcb_shm_detach(win.conn, canvas.x.shm.seg);
@@ -478,17 +485,13 @@ xclearinvarea(int16_t x, int16_t y, uint16_t width, uint16_t height)
 		xcb_clear_area(win.conn, 0, win.id, 0, 0, x, win.height);
 
 	if (y + height < win.height) {
-		xcb_clear_area(
-			win.conn, 0, win.id, 0, y + height,
-			win.width, win.height - y + height
-		);
+		xcb_clear_area(win.conn, 0, win.id, 0, y + height,
+				win.width, win.height - y + height);
 	}
 
 	if (x + width < win.width) {
-		xcb_clear_area(
-			win.conn, 0, win.id, x + width, 0,
-			win.width - x + width, win.height
-		);
+		xcb_clear_area(win.conn, 0, win.id, x + width, 0,
+			win.width - x + width, win.height);
 	}
 }
 
@@ -506,15 +509,11 @@ xswapbuffers(void)
 	xclearinvarea(ox, oy, canvas.width, canvas.height);
 
 	if (canvas.shm) {
-		xcb_copy_area(
-			win.conn, canvas.x.shm.pixmap, win.id,
-			canvas.gc, 0, 0, ox, oy, canvas.width, canvas.height
-		);
+		xcb_copy_area(win.conn, canvas.x.shm.pixmap, win.id,
+			canvas.gc, 0, 0, ox, oy, canvas.width, canvas.height);
 	} else {
-		xcb_image_put(
-			win.conn, win.id, canvas.gc,
-			canvas.x.image, ox, oy, 0
-		);
+		xcb_image_put(win.conn, win.id, canvas.gc,
+			canvas.x.image, ox, oy, 0);
 	}
 
 	xcb_flush(win.conn);
@@ -541,10 +540,8 @@ undo(void)
 	if (NULL == state.undo_buffer)
 		return;
 
-	memcpy(
-		canvas.px, state.undo_buffer,
-		canvas.width * canvas.height * sizeof(uint32_t)
-	);
+	memcpy(canvas.px, state.undo_buffer,
+		canvas.width * canvas.height * sizeof(uint32_t));
 
 	xswapbuffers();
 }
@@ -554,14 +551,11 @@ undohistorypush(void)
 {
 	if (state.undo_buffer == NULL) {
 		state.undo_buffer = malloc(
-			canvas.width * canvas.height * sizeof(uint32_t)
-		);
+			canvas.width * canvas.height * sizeof(uint32_t));
 	}
 
-	memcpy(
-		state.undo_buffer, canvas.px,
-		canvas.width * canvas.height * sizeof(uint32_t)
-	);
+	memcpy(state.undo_buffer, canvas.px,
+		canvas.width * canvas.height * sizeof(uint32_t));
 }
 
 static void
