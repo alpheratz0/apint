@@ -726,7 +726,8 @@ h_button_press(xcb_button_press_event_t *ev)
 
 	switch (ev->detail) {
 		case XCB_BUTTON_INDEX_1:
-			if (!state.dragging && xwin2canvascoord(ev->event_x, ev->event_y, &x, &y)) {
+			if (!state.dragging) {
+				xwin2canvascoord(ev->event_x, ev->event_y, &x, &y);
 				state.painting = 1;
 				undohistorypush();
 				xcanvasaddpoint(x, y, state.color, state.brush_size);
@@ -755,7 +756,8 @@ h_motion_notify(xcb_motion_notify_event_t *ev)
 
 	if (state.dragging) {
 		drag_update(ev->event_x, ev->event_y);
-	} else if (state.painting && xwin2canvascoord(ev->event_x, ev->event_y, &x, &y)) {
+	} else if (state.painting) {
+		xwin2canvascoord(ev->event_x, ev->event_y, &x, &y);
 		xcanvasaddpoint(x, y, state.color, state.brush_size);
 	}
 }
