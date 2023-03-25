@@ -34,6 +34,18 @@ die(const char *fmt, ...)
 	exit(1);
 }
 
+extern void
+warn(const char *fmt, ...)
+{
+	va_list args;
+
+	fputs("apint: ", stderr);
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
+	fputc('\n', stderr);
+}
+
 extern const char *
 enotnull(const char *str, const char *name)
 {

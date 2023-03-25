@@ -17,6 +17,7 @@
 
 #include <sys/wait.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
@@ -43,12 +44,11 @@ prompt_read(const char *prompt)
 		freopen("/dev/null", "r", stdin);
 		close(fd[0]);
 		dup2(fd[1], STDOUT_FILENO);
-#if 0
-		execl("/bin/rofi", "rofi", "-dmenu", "-i", "-p", prompt, "-hint-welcome", "", "-hint-result", "", (char *)(NULL));
-#else
 		execl("/bin/dmenu", "dmenu", "-p", prompt, (char *)(NULL));
-#endif
-		die("execl failed");
+		warn("exec() dmenu failed");
+		execl("/bin/rofi", "rofi", "-dmenu", "-i", "-p", prompt, "-hint-welcome", "", "-hint-result", "", (char *)(NULL));
+		warn("exec() rofi failed");
+		exit(127);
 	} else {
 		close(fd[1]);
 

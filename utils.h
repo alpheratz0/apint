@@ -22,6 +22,9 @@
 extern void
 die(const char *fmt, ...);
 
+extern void
+warn(const char *fmt, ...);
+
 extern const char *
 enotnull(const char *str, const char *name);
 
