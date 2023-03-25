@@ -26,134 +26,65 @@
 
 */
 
-#include <png.h>
-#include <errno.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
-#include <stdarg.h>
-#include <string.h>
-#include <setjmp.h>
 #include <math.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <xcb/shm.h>
 #include <xcb/xcb.h>
-#include <xcb/xcb_cursor.h>
-#include <xcb/xcb_image.h>
-#include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
+#include <xcb/xcb_keysyms.h>
+#include <xcb/xcb_cursor.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
-#include <saveas/saveas.h>
 
-#define UNUSED __attribute__((unused))
-#define LEN(arr) (sizeof(arr) / sizeof(arr[0]))
-
-typedef struct {
-	int shm;
-	int width;
-	int height;
-	uint32_t *px;
-	xcb_gcontext_t gc;
-	union {
-		struct {
-			int id;
-			xcb_shm_seg_t seg;
-			xcb_pixmap_t pixmap;
-		} shm;
-		xcb_image_t *image;
-	} x;
-} XCanvas;
+#include "utils.h"
+#include "canvas.h"
+#include "picker.h"
+#include "history.h"
+#include "prompt.h"
 
 typedef struct {
-	xcb_connection_t *conn;
-	xcb_screen_t *screen;
-	xcb_window_t id;
-	int32_t width;
-	int32_t height;
-	xcb_key_symbols_t *ksyms;
-	xcb_cursor_context_t *cctx;
-	xcb_cursor_t chand;
-	xcb_cursor_t carrow;
-} XWindow;
+	bool active;
+	int x;
+	int y;
+} DragInfo;
 
 typedef struct {
-	xcb_point_t p0;
-	xcb_point_t p1;
-} XOffset;
-
-typedef struct {
-	int fullscreen;
-} ApintStartOptions;
-
-typedef struct {
-	uint32_t index;
-	uint32_t colors[8];
-} ApintPalette;
-
-typedef struct {
-	int painting;
-	int dragging;
-	XOffset drag_offset;
-	int32_t brush_size;
-	int32_t previous_brush_size;
+	bool active;
 	uint32_t color;
-	uint32_t previous_color;
-	ApintPalette palette;
-	uint32_t *undo_buffer;
-} ApintState;
+	int brush_size;
+} DrawInfo;
 
-static XWindow win;
-static XCanvas canvas;
-static ApintStartOptions start_options;
-static ApintState state;
+#ifndef APINT_NO_HISTORY
+static History *hist;
+static HistoryUserAction *hist_last_action;
+#endif
 
-static void
-die(const char *fmt, ...)
-{
-	va_list args;
-
-	fputs("apint: ", stderr);
-	va_start(args, fmt);
-	vfprintf(stderr, fmt, args);
-	va_end(args);
-	fputc('\n', stderr);
-	exit(1);
-}
-
-static const char *
-enotnull(const char *str, const char *name)
-{
-	if (NULL == str)
-		die("%s cannot be null", name);
-	return str;
-}
-
-static void
-stateinit(void)
-{
-	state.palette.colors[0] = 0xff0000;
-	state.palette.colors[1] = 0x00ff00;
-	state.palette.colors[2] = 0x0000ff;
-	state.palette.colors[3] = 0xffff00;
-	state.palette.colors[4] = 0xff00ff;
-	state.palette.colors[5] = 0x00ffff;
-	state.palette.colors[6] = 0x000000;
-	state.palette.colors[7] = 0xffffff;
-	state.brush_size = state.previous_brush_size = 15;
-	state.color = state.previous_color = state.palette.colors[0];
-}
+static Canvas *canvas;
+static Picker *picker;
+static xcb_connection_t *conn;
+static xcb_screen_t *scr;
+static xcb_window_t win;
+static xcb_key_symbols_t *ksyms;
+static xcb_cursor_context_t *cctx;
+static xcb_cursor_t cursor_hand;
+static xcb_cursor_t cursor_crosshair;
+static DrawInfo drawinfo;
+static DragInfo draginfo;
+static bool start_in_fullscreen;
+static bool should_close;
 
 static xcb_atom_t
-xatom(const char *name)
+get_x11_atom(const char *name)
 {
 	xcb_atom_t atom;
 	xcb_generic_error_t *error;
 	xcb_intern_atom_cookie_t cookie;
 	xcb_intern_atom_reply_t *reply;
 
-	cookie = xcb_intern_atom(win.conn, 0, strlen(name), name);
-	reply = xcb_intern_atom_reply(win.conn, cookie, &error);
+	cookie = xcb_intern_atom(conn, 0, strlen(name), name);
+	reply = xcb_intern_atom_reply(conn, cookie, &error);
 
 	if (NULL != error)
 		die("xcb_intern_atom failed with error code: %hhu",
@@ -165,64 +96,51 @@ xatom(const char *name)
 	return atom;
 }
 
-static int
-xtestmitshm(void)
-{
-	xcb_generic_error_t *error;
-	xcb_shm_query_version_cookie_t cookie;
-	xcb_shm_query_version_reply_t *reply;
-
-	cookie = xcb_shm_query_version(win.conn);
-	reply = xcb_shm_query_version_reply(win.conn, cookie, &error);
-
-	if (NULL != error) {
-		if (NULL != reply)
-			free(reply);
-		free(error);
-		return 0;
-	}
-
-	if (NULL != reply) {
-		if (reply->shared_pixmaps == 0) {
-			free(reply);
-			return 0;
-		}
-		free(reply);
-		return 1;
-	}
-
-	return 0;
-}
-
 static void
 xwininit(void)
 {
-	win.conn = xcb_connect(NULL, NULL);
-	if (xcb_connection_has_error(win.conn))
+	const char *wm_class,
+		       *wm_name;
+
+	xcb_atom_t _NET_WM_NAME,
+			   _NET_WM_WINDOW_OPACITY;
+
+	xcb_atom_t WM_PROTOCOLS,
+			   WM_DELETE_WINDOW;
+
+	xcb_atom_t _NET_WM_STATE,
+			   _NET_WM_STATE_FULLSCREEN;
+
+	xcb_atom_t UTF8_STRING;
+
+	uint8_t opacity[4];
+
+	conn = xcb_connect(NULL, NULL);
+
+	if (xcb_connection_has_error(conn))
 		die("can't open display");
 
-	win.screen = xcb_setup_roots_iterator(xcb_get_setup(win.conn)).data;
-	if (NULL == win.screen)
+	scr = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
+
+	if (NULL == scr)
 		die("can't get default screen");
 
-	if (xcb_cursor_context_new(win.conn, win.screen, &win.cctx) != 0)
+	if (xcb_cursor_context_new(conn, scr, &cctx) != 0)
 		die("can't create cursor context");
 
-	win.chand = xcb_cursor_load_cursor(win.cctx, "fleur");
-	win.carrow = xcb_cursor_load_cursor(win.cctx, "left_ptr");
-	win.width = 800, win.height = 600;
-	win.ksyms = xcb_key_symbols_alloc(win.conn);
-	win.id = xcb_generate_id(win.conn);
+	cursor_hand = xcb_cursor_load_cursor(cctx, "fleur");
+	cursor_crosshair = xcb_cursor_load_cursor(cctx, "crosshair");
+	ksyms = xcb_key_symbols_alloc(conn);
+	win = xcb_generate_id(conn);
 
 	xcb_create_window_aux(
-		win.conn, win.screen->root_depth, win.id, win.screen->root, 0, 0,
-		win.width, win.height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
-		win.screen->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
+		conn, scr->root_depth, win, scr->root, 0, 0,
+		800, 600, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
+		scr->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
 		(const xcb_create_window_value_list_t []) {{
-			.background_pixel = 0,
+			.background_pixel = 0x0e0e0e,
 			.event_mask = XCB_EVENT_MASK_EXPOSURE |
 			              XCB_EVENT_MASK_KEY_PRESS |
-			              XCB_EVENT_MASK_KEY_RELEASE |
 			              XCB_EVENT_MASK_BUTTON_PRESS |
 			              XCB_EVENT_MASK_BUTTON_RELEASE |
 			              XCB_EVENT_MASK_POINTER_MOTION |
@@ -230,368 +148,54 @@ xwininit(void)
 		}}
 	);
 
-	xcb_change_property(win.conn, XCB_PROP_MODE_REPLACE, win.id,
-		xatom("_NET_WM_NAME"), xatom("UTF8_STRING"), 8,
-		strlen("apint"), "apint"
-	);
+	_NET_WM_NAME = get_x11_atom("_NET_WM_NAME");
+	UTF8_STRING = get_x11_atom("UTF8_STRING");
+	wm_name = "apint";
 
-	xcb_change_property(win.conn, XCB_PROP_MODE_REPLACE, win.id,
-		XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8,
-		strlen("apint\0apint\0"), "apint\0apint\0"
-	);
+	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win,
+		_NET_WM_NAME, UTF8_STRING, 8, strlen(wm_name), wm_name);
 
-	xcb_change_property(win.conn, XCB_PROP_MODE_REPLACE, win.id,
-		xatom("WM_PROTOCOLS"), XCB_ATOM_ATOM, 32, 1,
-		(const xcb_atom_t []) { xatom("WM_DELETE_WINDOW") }
-	);
+	wm_class = "apint\0apint\0";
+	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, XCB_ATOM_WM_CLASS,
+		XCB_ATOM_STRING, 8, strlen(wm_class), wm_class);
 
-	xcb_change_property(win.conn, XCB_PROP_MODE_REPLACE, win.id,
-		xatom("_NET_WM_WINDOW_OPACITY"), XCB_ATOM_CARDINAL, 32, 1,
-		(const uint8_t []) { 0xff, 0xff, 0xff, 0xff }
-	);
+	WM_PROTOCOLS = get_x11_atom("WM_PROTOCOLS");
+	WM_DELETE_WINDOW = get_x11_atom("WM_DELETE_WINDOW");
 
-	if (start_options.fullscreen) {
-		xcb_change_property(win.conn, XCB_PROP_MODE_REPLACE, win.id,
-			xatom("_NET_WM_STATE"), XCB_ATOM_ATOM, 32, 1,
-			(const xcb_atom_t []) { xatom("_NET_WM_STATE_FULLSCREEN") }
-		);
+	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win,
+		WM_PROTOCOLS, XCB_ATOM_ATOM, 32, 1, &WM_DELETE_WINDOW);
+
+	_NET_WM_WINDOW_OPACITY = get_x11_atom("_NET_WM_WINDOW_OPACITY");
+	opacity[0] = opacity[1] = opacity[2] = opacity[3] = 0xff;
+
+	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win,
+		_NET_WM_WINDOW_OPACITY, XCB_ATOM_CARDINAL, 32, 1, opacity);
+
+	_NET_WM_STATE = get_x11_atom("_NET_WM_STATE");
+	_NET_WM_STATE_FULLSCREEN = get_x11_atom("_NET_WM_STATE_FULLSCREEN");
+
+	if (start_in_fullscreen) {
+		xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win,
+			_NET_WM_STATE, XCB_ATOM_ATOM, 32, 1, &_NET_WM_STATE_FULLSCREEN);
 	}
 
-	xcb_map_window(win.conn, win.id);
-	xcb_flush(win.conn);
+	xcb_change_window_attributes(conn, win, XCB_CW_CURSOR, &cursor_crosshair);
+	xcb_map_window(conn, win);
+	xcb_flush(conn);
 }
 
 static void
 xwindestroy(void)
 {
-	xcb_free_cursor(win.conn, win.chand);
-	xcb_free_cursor(win.conn, win.carrow);
-	xcb_key_symbols_free(win.ksyms);
-	xcb_cursor_context_free(win.cctx);
-	xcb_disconnect(win.conn);
+	xcb_free_cursor(conn, cursor_hand);
+	xcb_free_cursor(conn, cursor_crosshair);
+	xcb_key_symbols_free(ksyms);
+	xcb_destroy_window(conn, win);
+	xcb_cursor_context_free(cctx);
+	xcb_disconnect(conn);
 }
 
-static void
-xcanvasinit(int32_t width, int32_t height)
-{
-	size_t szpx;
-
-	szpx = width * height * sizeof(uint32_t);
-
-	canvas.width = width;
-	canvas.height = height;
-	canvas.shm = xtestmitshm();
-	canvas.gc = xcb_generate_id(win.conn);
-
-	xcb_create_gc(win.conn, canvas.gc, win.id, 0, NULL);
-
-	if (canvas.shm) {
-		canvas.x.shm.seg = xcb_generate_id(win.conn);
-		canvas.x.shm.pixmap = xcb_generate_id(win.conn);
-		canvas.x.shm.id = shmget(IPC_PRIVATE, szpx, IPC_CREAT | 0600);
-
-		if (canvas.x.shm.id < 0)
-			die("shmget failed");
-
-		canvas.px = shmat(canvas.x.shm.id, NULL, 0);
-
-		if ((void *)(-1) == canvas.px) {
-			shmctl(canvas.x.shm.id, IPC_RMID, NULL);
-			die("shmat failed");
-		}
-
-		xcb_shm_attach(win.conn, canvas.x.shm.seg, canvas.x.shm.id, 0);
-		shmctl(canvas.x.shm.id, IPC_RMID, NULL);
-		memset(canvas.px, 255, szpx);
-
-		xcb_shm_create_pixmap(win.conn, canvas.x.shm.pixmap, win.id,
-			width, height, win.screen->root_depth, canvas.x.shm.seg, 0
-		);
-	} else {
-		canvas.px = malloc(szpx);
-
-		if (NULL == canvas.px)
-			die("error while calling malloc, no memory available");
-
-		memset(canvas.px, 255, szpx);
-
-		canvas.x.image = xcb_image_create_native(
-			win.conn, width, height, XCB_IMAGE_FORMAT_Z_PIXMAP,
-			win.screen->root_depth, canvas.px,
-			szpx, (uint8_t *)(canvas.px)
-		);
-	}
-}
-
-static void
-xcanvasdestroy(void)
-{
-	xcb_free_gc(win.conn, canvas.gc);
-
-	if (canvas.shm) {
-		shmctl(canvas.x.shm.id, IPC_RMID, NULL);
-		xcb_shm_detach(win.conn, canvas.x.shm.seg);
-		shmdt(canvas.px);
-		xcb_free_pixmap(win.conn, canvas.x.shm.pixmap);
-	} else {
-		xcb_image_destroy(canvas.x.image);
-	}
-}
-
-static void
-xcanvasload(const char *path)
-{
-	FILE *fp;
-	png_struct *png;
-	png_info *pnginfo;
-	png_byte **rows, bit_depth;
-	int16_t x, y;
-
-	if (NULL == (fp = fopen(path, "rb")))
-		die("failed to open file %s: %s", path, strerror(errno));
-
-	if (NULL == (png = png_create_read_struct(PNG_LIBPNG_VER_STRING,
-					NULL, NULL, NULL)))
-		die("png_create_read_struct failed");
-
-	if (NULL == (pnginfo = png_create_info_struct(png)))
-		die("png_create_info_struct failed");
-
-	if (setjmp(png_jmpbuf(png)) != 0)
-		die("aborting due to libpng error");
-
-	png_init_io(png, fp);
-	png_read_info(png, pnginfo);
-	xcanvasinit(png_get_image_width(png, pnginfo), png_get_image_height(png, pnginfo));
-
-	bit_depth = png_get_bit_depth(png, pnginfo);
-	png_set_interlace_handling(png);
-
-	if (bit_depth == 16)
-		png_set_strip_16(png);
-
-	if (png_get_valid(png, pnginfo, PNG_INFO_tRNS))
-		png_set_tRNS_to_alpha(png);
-
-	switch (png_get_color_type(png, pnginfo)) {
-		case PNG_COLOR_TYPE_RGB:
-			png_set_filler(png, 0xff, PNG_FILLER_AFTER);
-			break;
-		case PNG_COLOR_TYPE_PALETTE:
-			png_set_palette_to_rgb(png);
-			png_set_filler(png, 0xff, PNG_FILLER_AFTER);
-			break;
-		case PNG_COLOR_TYPE_GRAY:
-			if (bit_depth < 8)
-				png_set_expand_gray_1_2_4_to_8(png);
-			png_set_filler(png, 0xff, PNG_FILLER_AFTER);
-			png_set_gray_to_rgb(png);
-			break;
-		case PNG_COLOR_TYPE_GRAY_ALPHA:
-			png_set_gray_to_rgb(png);
-	}
-
-	png_read_update_info(png, pnginfo);
-
-	rows = png_malloc(png, sizeof(png_byte *) * canvas.height);
-
-	for (y = 0; y < canvas.height; ++y)
-		rows[y] = png_malloc(png, png_get_rowbytes(png, pnginfo));
-
-	png_read_image(png, rows);
-
-	for (y = 0; y < canvas.height; ++y) {
-		for (x = 0; x < canvas.width; ++x) {
-			if (rows[y][x*4+3] == 0)
-				canvas.px[y*canvas.width+x] = 0xffffff;
-			else canvas.px[y*canvas.width+x] = rows[y][x*4+0] << 16 |
-				rows[y][x*4+1] << 8 |
-				rows[y][x*4+2];
-		}
-		png_free(png, rows[y]);
-	}
-
-	png_free(png, rows);
-	png_read_end(png, NULL);
-	png_free_data(png, pnginfo, PNG_FREE_ALL, -1);
-	png_destroy_info_struct(png, &pnginfo);
-	png_destroy_read_struct(&png, NULL, NULL);
-	fclose(fp);
-}
-
-static void
-xcanvassave(const char *path)
-{
-	int x, y;
-	FILE *fp;
-	png_struct *png;
-	png_info *pnginfo;
-	png_byte *row;
-
-	if (NULL == (fp = fopen(path, "wb")))
-		die("fopen failed: %s", strerror(errno));
-
-	if (NULL == (png = png_create_write_struct(PNG_LIBPNG_VER_STRING,
-					NULL, NULL, NULL)))
-		die("png_create_write_struct failed");
-
-	if (NULL == (pnginfo = png_create_info_struct(png)))
-		die("png_create_info_struct failed");
-
-	if (setjmp(png_jmpbuf(png)) != 0)
-		die("aborting due to libpng error");
-
-	png_init_io(png, fp);
-	png_set_IHDR(png, pnginfo, canvas.width, canvas.height, 8,
-		PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
-		PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE
-	);
-
-	png_write_info(png, pnginfo);
-	png_set_compression_level(png, 3);
-
-	row = malloc(canvas.width * 3);
-
-	for (y = 0; y < canvas.height; ++y) {
-		for (x = 0; x < canvas.width; ++x) {
-			row[x*3+0] = (canvas.px[y*canvas.width+x] & 0xff0000) >> 16;
-			row[x*3+1] = (canvas.px[y*canvas.width+x] & 0xff00) >> 8;
-			row[x*3+2] = canvas.px[y*canvas.width+x] & 0xff;
-		}
-		png_write_row(png, row);
-	}
-
-	png_write_end(png, NULL);
-	png_free_data(png, pnginfo, PNG_FREE_ALL, -1);
-	png_destroy_info_struct(png, &pnginfo);
-	png_destroy_write_struct(&png, NULL);
-	fclose(fp);
-	free(row);
-}
-
-static void
-xclearinvarea(int16_t x, int16_t y, uint16_t width, uint16_t height)
-{
-	if (x >= win.width || (x + width) <= 0
-			|| y >= win.height || (y + height) <= 0) {
-		xcb_clear_area(win.conn, 0, win.id, 0, 0, win.width, win.height);
-		return;
-	}
-
-	if (y > 0)
-		xcb_clear_area(win.conn, 0, win.id, 0, 0, win.width, y);
-
-	if (x > 0)
-		xcb_clear_area(win.conn, 0, win.id, 0, 0, x, win.height);
-
-	if (y + height < win.height) {
-		xcb_clear_area(win.conn, 0, win.id, 0, y + height,
-				win.width, win.height - y + height);
-	}
-
-	if (x + width < win.width) {
-		xcb_clear_area(win.conn, 0, win.id, x + width, 0,
-			win.width - x + width, win.height);
-	}
-}
-
-static void
-xswapbuffers(void)
-{
-	int32_t ox, oy;
-
-	ox = (state.drag_offset.p1.x - state.drag_offset.p0.x) +
-		(win.width - canvas.width) / 2;
-
-	oy = (state.drag_offset.p1.y - state.drag_offset.p0.y) +
-		(win.height - canvas.height) / 2;
-
-	xclearinvarea(ox, oy, canvas.width, canvas.height);
-
-	if (canvas.shm) {
-		xcb_copy_area(win.conn, canvas.x.shm.pixmap, win.id,
-			canvas.gc, 0, 0, ox, oy, canvas.width, canvas.height);
-	} else {
-		xcb_image_put(win.conn, win.id, canvas.gc,
-			canvas.x.image, ox, oy, 0);
-	}
-
-	xcb_flush(win.conn);
-}
-
-static void
-set_color(uint32_t c)
-{
-	state.previous_color = state.color;
-	state.color = c;
-}
-
-static void
-set_brush_size(int32_t bs)
-{
-	if (bs < 5) bs = 5;
-	state.previous_brush_size = state.brush_size;
-	state.brush_size = bs;
-}
-
-static void
-undo(void)
-{
-	if (NULL == state.undo_buffer)
-		return;
-
-	memcpy(canvas.px, state.undo_buffer,
-		canvas.width * canvas.height * sizeof(uint32_t));
-
-	xswapbuffers();
-}
-
-static void
-undohistorypush(void)
-{
-	if (state.undo_buffer == NULL) {
-		state.undo_buffer = malloc(
-			canvas.width * canvas.height * sizeof(uint32_t));
-	}
-
-	memcpy(state.undo_buffer, canvas.px,
-		canvas.width * canvas.height * sizeof(uint32_t));
-}
-
-static void
-undohistorydestroy(void)
-{
-	free(state.undo_buffer);
-}
-
-static void
-drag_begin(int16_t x, int16_t y)
-{
-	state.dragging = 1;
-	state.drag_offset.p0.x = state.drag_offset.p0.x - state.drag_offset.p1.x + x;
-	state.drag_offset.p0.y = state.drag_offset.p0.y - state.drag_offset.p1.y + y;
-	xcb_change_window_attributes(win.conn, win.id, XCB_CW_CURSOR, &win.chand);
-	xcb_flush(win.conn);
-}
-
-static void
-drag_update(int32_t x, int32_t y)
-{
-	state.drag_offset.p1.x = x;
-	state.drag_offset.p1.y = y;
-	xswapbuffers();
-}
-
-static void
-drag_end(int32_t x, int32_t y)
-{
-	state.dragging = 0;
-	state.drag_offset.p1.x = x;
-	state.drag_offset.p1.y = y;
-	xcb_change_window_attributes(win.conn, win.id, XCB_CW_CURSOR, &win.carrow);
-	xcb_flush(win.conn);
-}
-
+#ifndef APINT_USE_ROUGH_BRUSH
 static inline uint8_t
 blerp(uint8_t from, uint8_t to, double v)
 {
@@ -610,40 +214,249 @@ color_lerp(uint32_t from, uint32_t to, double v)
 
 	return (r << 16) | (g << 8) | b;
 }
+#endif
 
-static int
-xwin2canvascoord(int32_t wx, int32_t wy, int32_t *cx, int32_t *cy)
+static void
+addpoint(int x, int y, uint32_t color, int size, bool add_to_history)
 {
-	*cx = (state.drag_offset.p0.x - state.drag_offset.p1.x)
-		+ wx - (win.width - canvas.width) / 2;
+	int dx, dy;
+	uint32_t prevcol;
 
-	*cy = (state.drag_offset.p0.y - state.drag_offset.p1.y)
-		+ wy - (win.height - canvas.height) / 2;
+#ifndef APINT_NO_HISTORY
+	int canvasx, canvasy;
 
-	return *cx >= 0 && *cx < canvas.width && *cy >= 0 && *cy < canvas.height;
+	if (add_to_history) {
+		if (NULL == hist_last_action)
+			hist_last_action = history_user_action_new();
+		canvas_camera_to_canvas_pos(canvas, x, y, &canvasx, &canvasy);
+		history_user_action_push_atomic(hist_last_action,
+				history_atomic_action_new(canvasx, canvasy,
+					color, size));
+	}
+#else
+	(void) add_to_history;
+#endif
+
+	for (dy = -size; dy < size; ++dy) {
+		for (dx = -size; dx < size; ++dx) {
+			if (dy * dy + dx * dx >= size * size ||
+					!canvas_get_pixel(canvas, x + dx, y + dy, &prevcol))
+				continue;
+#ifdef APINT_USE_ROUGH_BRUSH
+			canvas_set_pixel(canvas, x + dx, y + dy, color);
+#else
+			canvas_set_pixel(canvas, x + dx, y + dy,
+					color_lerp(color, prevcol,
+						sqrt(dy * dy + dx * dx) / size));
+#endif
+		}
+	}
+}
+
+#ifndef APINT_NO_HISTORY
+static void
+regenfromhist(void)
+{
+	int x, y;
+	HistoryUserAction *hua;
+	HistoryAtomicAction *haa;
+
+	for (hua = hist->root; hua != hist->current->next; hua = hua->next) {
+		for (haa = hua->aa; haa; haa = haa->next) {
+			canvas_canvas_to_camera_pos(canvas, haa->x, haa->y, &x, &y);
+			addpoint(x, y, haa->color, haa->size, false);
+		}
+	}
 }
 
 static void
-xcanvasaddpoint(int32_t x, int32_t y, uint32_t color, int32_t size)
+undo(void)
 {
-	int32_t dx, dy;
+	if (history_undo(hist)) {
+		canvas_clear(canvas);
+		regenfromhist();
+		canvas_render(canvas);
+	}
+}
 
-	for (dy = -size; dy < size; ++dy) {
-		if ((y+dy) < 0 || (y+dy) >= canvas.height)
-			continue;
-		for (dx = -size; dx < size; ++dx) {
-			if ((x+dx) < 0 || (x+dx) >= canvas.width)
-				continue;
-			if (dy*dy+dx*dx < size*size) {
-				canvas.px[(y + dy) * canvas.width + (x + dx)] = color_lerp(
-					color, canvas.px[(y + dy) * canvas.width + (x + dx)],
-					sqrt(dy * dy + dx * dx) / size
-				);
-			}
+static void
+redo(void)
+{
+	if (history_redo(hist)) {
+		canvas_clear(canvas);
+		regenfromhist();
+		canvas_render(canvas);
+	}
+}
+#endif
+
+static void
+save(void)
+{
+	char *path;
+
+	path = prompt_read("save as...");
+
+	if (!path)
+		return;
+
+	canvas_save(canvas, path);
+	free(path);
+}
+
+static void
+h_client_message(xcb_client_message_event_t *ev)
+{
+	xcb_atom_t WM_DELETE_WINDOW;
+
+	WM_DELETE_WINDOW = get_x11_atom("WM_DELETE_WINDOW");
+
+	/* check if the wm sent a delete window message */
+	/* https://www.x.org/docs/ICCCM/icccm.pdf */
+	if (ev->data.data32[0] == WM_DELETE_WINDOW)
+		should_close = true;
+}
+
+static void
+h_expose(xcb_expose_event_t *ev)
+{
+	(void) ev;
+	canvas_render(canvas);
+}
+
+static void
+h_key_press(xcb_key_press_event_t *ev)
+{
+	xcb_keysym_t key;
+
+	key = xcb_key_symbols_get_keysym(ksyms, ev->detail, 0);
+
+	if (picker_is_visible(picker))
+		picker_hide(picker);
+
+	if (ev->state & XCB_MOD_MASK_CONTROL) {
+		switch (key) {
+#ifndef APINT_NO_HISTORY
+		case XKB_KEY_z: if (!drawinfo.active) undo(); return;
+		case XKB_KEY_y: if (!drawinfo.active) redo(); return;
+#endif
+
+		case XKB_KEY_s: save(); return;
 		}
 	}
 
-	xswapbuffers();
+	switch (key) {
+	case XKB_KEY_r: drawinfo.color = 0xb81c00; break; /* Red */
+	case XKB_KEY_g: drawinfo.color = 0x50c878; break; /* Green */
+	case XKB_KEY_b: drawinfo.color = 0x1239e6; break; /* Blue */
+	case XKB_KEY_w: drawinfo.color = 0xffffff; break; /* White */
+	case XKB_KEY_q: drawinfo.color = 0x000000; break; /* Black */
+	case XKB_KEY_o: drawinfo.color = 0xcc551f; break; /* Orange */
+	case XKB_KEY_y: drawinfo.color = 0xffff00; break; /* Yellow */
+	case XKB_KEY_f: drawinfo.color = 0xca2c92; break; /* Fuchsia */
+	case XKB_KEY_t: drawinfo.color = 0x008080; break; /* Teal */
+	case XKB_KEY_c: drawinfo.color = 0xfffdd0; break; /* Cream */
+	}
+}
+
+static void
+h_button_press(xcb_button_press_event_t *ev)
+{
+	switch (ev->detail) {
+	case XCB_BUTTON_INDEX_1:
+		if (draginfo.active)
+			break;
+		picker_hide(picker);
+		drawinfo.active = true;
+		addpoint(ev->event_x, ev->event_y, drawinfo.color, drawinfo.brush_size, true);
+		canvas_render(canvas);
+		break;
+	case XCB_BUTTON_INDEX_2:
+		if (drawinfo.active)
+			break;
+		draginfo.active = true;
+		draginfo.x = ev->event_x;
+		draginfo.y = ev->event_y;
+		xcb_change_window_attributes(conn, win, XCB_CW_CURSOR, &cursor_hand);
+		xcb_flush(conn);
+		break;
+	case XCB_BUTTON_INDEX_3:
+		picker_set(picker, drawinfo.color);;
+		picker_show(picker, ev->event_x, ev->event_y);
+		break;
+	case XCB_BUTTON_INDEX_4:
+		if (drawinfo.brush_size < 30)
+			drawinfo.brush_size++;
+		break;
+	case XCB_BUTTON_INDEX_5:
+		if (drawinfo.brush_size > 2)
+			drawinfo.brush_size--;
+		break;
+	}
+}
+
+static void
+h_motion_notify(xcb_motion_notify_event_t *ev)
+{
+	int dx, dy;
+
+	if (draginfo.active) {
+		dx = draginfo.x - ev->event_x;
+		dy = draginfo.y - ev->event_y;
+
+		draginfo.x = ev->event_x;
+		draginfo.y = ev->event_y;
+
+		canvas_camera_move_relative(canvas, dx, dy);
+		canvas_render(canvas);
+	}
+
+	if (drawinfo.active) {
+		addpoint(ev->event_x, ev->event_y, drawinfo.color, drawinfo.brush_size, true);
+		canvas_render(canvas);
+	}
+}
+
+static void
+h_button_release(xcb_button_release_event_t *ev)
+{
+	switch (ev->detail) {
+	case XCB_BUTTON_INDEX_1:
+		drawinfo.active = false;
+#ifndef APINT_NO_HISTORY
+		if (NULL == hist_last_action)
+			break;
+		history_do(hist, hist_last_action);
+		hist_last_action = NULL;
+#endif
+		break;
+	case XCB_BUTTON_INDEX_2:
+		draginfo.active = false;
+		xcb_change_window_attributes(conn, win, XCB_CW_CURSOR, &cursor_crosshair);
+		xcb_flush(conn);
+		break;
+	}
+}
+
+static void
+h_configure_notify(xcb_configure_notify_event_t *ev)
+{
+	canvas_set_viewport(canvas, ev->width, ev->height);
+	canvas_camera_to_center(canvas);
+}
+
+static void
+h_mapping_notify(xcb_mapping_notify_event_t *ev)
+{
+	if (ev->count > 0)
+		xcb_refresh_keyboard_mapping(ksyms, ev);
+}
+
+static void
+h_picker_color_change(Picker *picker, uint32_t color)
+{
+	(void) picker;
+	drawinfo.color = color;
 }
 
 static void
@@ -660,135 +473,6 @@ version(void)
 	exit(0);
 }
 
-static void
-h_client_message(xcb_client_message_event_t *ev)
-{
-	/* check if the wm sent a delete window message */
-	/* https://www.x.org/docs/ICCCM/icccm.pdf */
-	if (ev->data.data32[0] == xatom("WM_DELETE_WINDOW")) {
-		xcanvasdestroy();
-		xwindestroy();
-		undohistorydestroy();
-		exit(0);
-	}
-}
-
-static void
-h_expose(UNUSED xcb_expose_event_t *ev)
-{
-	xswapbuffers();
-}
-
-static void
-h_key_press(xcb_key_press_event_t *ev)
-{
-	const char *savepath;
-	xcb_keysym_t key;
-
-	key = xcb_key_symbols_get_keysym(win.ksyms, ev->detail, 0);
-
-	if (key == XKB_KEY_d) {
-		set_color(0xffffff);
-	} else if (key == XKB_KEY_s) {
-		if (ev->state & XCB_MOD_MASK_CONTROL) {
-			if (saveas_show_popup(&savepath) == SAVEAS_STATUS_OK)
-				xcanvassave(savepath);
-		} else {
-			set_brush_size(10);
-		}
-	} else if (key == XKB_KEY_b) {
-		set_brush_size(40);
-	} else if (key >= XKB_KEY_1 && key < (XKB_KEY_1 + LEN(state.palette.colors))) {
-		set_color(state.palette.colors[state.palette.index = (key - XKB_KEY_1)]);
-	} else if (key == XKB_KEY_z && ev->state & XCB_MOD_MASK_CONTROL) {
-		undo();
-	}
-}
-
-static void
-h_key_release(xcb_key_release_event_t *ev)
-{
-	xcb_keysym_t key;
-
-	key = xcb_key_symbols_get_keysym(win.ksyms, ev->detail, 0);
-
-	if (key == XKB_KEY_d) {
-		set_color(state.previous_color);
-	} else if (key == XKB_KEY_s || key == XKB_KEY_b) {
-		set_brush_size(state.previous_brush_size);
-	}
-}
-
-static void
-h_button_press(xcb_button_press_event_t *ev)
-{
-	int32_t x, y;
-
-	switch (ev->detail) {
-		case XCB_BUTTON_INDEX_1:
-			if (!state.dragging) {
-				xwin2canvascoord(ev->event_x, ev->event_y, &x, &y);
-				state.painting = 1;
-				undohistorypush();
-				xcanvasaddpoint(x, y, state.color, state.brush_size);
-			}
-			break;
-		case XCB_BUTTON_INDEX_2:
-			drag_begin(ev->event_x, ev->event_y);
-			break;
-		case XCB_BUTTON_INDEX_3:
-			if (xwin2canvascoord(ev->event_x, ev->event_y, &x, &y))
-				set_color(canvas.px[y*canvas.width+x]);
-			break;
-		case XCB_BUTTON_INDEX_4:
-			set_brush_size(state.brush_size + 2);
-			break;
-		case XCB_BUTTON_INDEX_5:
-			set_brush_size(state.brush_size - 2);
-			break;
-	}
-}
-
-static void
-h_motion_notify(xcb_motion_notify_event_t *ev)
-{
-	int32_t x, y;
-
-	if (state.dragging) {
-		drag_update(ev->event_x, ev->event_y);
-	} else if (state.painting) {
-		xwin2canvascoord(ev->event_x, ev->event_y, &x, &y);
-		xcanvasaddpoint(x, y, state.color, state.brush_size);
-	}
-}
-
-static void
-h_button_release(xcb_button_release_event_t *ev)
-{
-	if (ev->detail == XCB_BUTTON_INDEX_1) {
-		state.painting = 0;
-	} else if (ev->detail == XCB_BUTTON_INDEX_2) {
-		drag_end(ev->event_x, ev->event_y);
-	}
-}
-
-static void
-h_configure_notify(xcb_configure_notify_event_t *ev)
-{
-	if (win.width == ev->width && win.height == ev->height)
-		return;
-
-	win.width = ev->width;
-	win.height = ev->height;
-}
-
-static void
-h_mapping_notify(xcb_mapping_notify_event_t *ev)
-{
-	if (ev->count > 0)
-		xcb_refresh_keyboard_mapping(win.ksyms, ev);
-}
-
 int
 main(int argc, char **argv)
 {
@@ -796,53 +480,80 @@ main(int argc, char **argv)
 	xcb_generic_event_t *ev;
 	int width, height;
 
-	width = 800, height = 600;
+	width = 640, height = 480;
 	loadpath = NULL;
 
 	while (++argv, --argc > 0) {
 		if ((*argv)[0] == '-' && (*argv)[1] != '\0' && (*argv)[2] == '\0') {
 			switch ((*argv)[1]) {
-				case 'h': usage(); break;
-				case 'v': version(); break;
-				case 'f': start_options.fullscreen = 1; break;
-				case 'l': --argc; loadpath = enotnull(*++argv, "path"); break;
-				case 'W': --argc; width = atoi(enotnull(*++argv, "width")); break;
-				case 'H': --argc; height = atoi(enotnull(*++argv, "height")); break;
-				default: die("invalid option %s", *argv); break;
+			case 'h': usage(); break;
+			case 'v': version(); break;
+			case 'f': start_in_fullscreen = true; break;
+			case 'l': --argc; loadpath = enotnull(*++argv, "path"); break;
+			case 'W': --argc; width = atoi(enotnull(*++argv, "width")); break;
+			case 'H': --argc; height = atoi(enotnull(*++argv, "height")); break;
+			default: die("invalid option %s", *argv); break;
 			}
 		} else {
 			die("unexpected argument: %s", *argv);
 		}
 	}
 
+	if (width == 0 || height == 0)
+		die("width or height is invalid");
+
 	if (width <= 5 || height <= 5)
-		die("invalid width/height");
+		die("width or height is too small");
+
+	if (width > 5000 || height > 5000)
+		die("width or height is too big");
 
 	xwininit();
-	stateinit();
 
-	if (NULL == loadpath) xcanvasinit(width, height);
-	else xcanvasload(loadpath);
+	drawinfo.color = 0x000000;
+	drawinfo.brush_size = 5;
 
-	while ((ev = xcb_wait_for_event(win.conn))) {
+	if (NULL == loadpath) {
+		canvas = canvas_new(conn, win, width, height);
+	} else {
+		canvas = canvas_load(conn, win, loadpath);
+	}
+
+	picker = picker_new(conn, win, h_picker_color_change);
+
+#ifndef APINT_NO_HISTORY
+	hist = history_new();
+#endif
+
+	while (!should_close && (ev = xcb_wait_for_event(conn))) {
+
+		// check if it is an event targeted to our color picker
+		if (picker_try_process_event(picker, ev)) {
+			free(ev);
+			continue;
+		}
+
 		switch (ev->response_type & ~0x80) {
-			case XCB_CLIENT_MESSAGE:     h_client_message((void *)(ev)); break;
-			case XCB_EXPOSE:             h_expose((void *)(ev)); break;
-			case XCB_KEY_PRESS:          h_key_press((void *)(ev)); break;
-			case XCB_KEY_RELEASE:        h_key_release((void *)(ev)); break;
-			case XCB_BUTTON_PRESS:       h_button_press((void *)(ev)); break;
-			case XCB_MOTION_NOTIFY:      h_motion_notify((void *)(ev)); break;
-			case XCB_BUTTON_RELEASE:     h_button_release((void *)(ev)); break;
-			case XCB_CONFIGURE_NOTIFY:   h_configure_notify((void *)(ev)); break;
-			case XCB_MAPPING_NOTIFY:     h_mapping_notify((void *)(ev)); break;
+		case XCB_CLIENT_MESSAGE:     h_client_message((void *)(ev)); break;
+		case XCB_EXPOSE:             h_expose((void *)(ev)); break;
+		case XCB_KEY_PRESS:          h_key_press((void *)(ev)); break;
+		case XCB_BUTTON_PRESS:       h_button_press((void *)(ev)); break;
+		case XCB_MOTION_NOTIFY:      h_motion_notify((void *)(ev)); break;
+		case XCB_BUTTON_RELEASE:     h_button_release((void *)(ev)); break;
+		case XCB_CONFIGURE_NOTIFY:   h_configure_notify((void *)(ev)); break;
+		case XCB_MAPPING_NOTIFY:     h_mapping_notify((void *)(ev)); break;
 		}
 
 		free(ev);
 	}
 
-	xcanvasdestroy();
+#ifndef APINT_NO_HISTORY
+	history_destroy(hist);
+#endif
+
+	canvas_destroy(canvas);
+	picker_destroy(picker);
 	xwindestroy();
-	undohistorydestroy();
 
 	return 0;
 }

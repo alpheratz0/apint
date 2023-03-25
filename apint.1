@@ -1,4 +1,4 @@
-.Dd January 14, 2023
+.Dd March 25, 2023
 .Dt APINT 1
 .Sh NAME
 .Nm apint
@@ -22,7 +22,7 @@ show usage
 .It Fl v
 display the program version
 .It Fl l
-load png file
+load canvas from png file
 .It Fl W
 create a canvas of that width
 .It Fl H
@@ -33,29 +33,49 @@ create a canvas of that height
 .It draw over a freshly taken screenshot
 apint -f -l $(xscreenshot -p -d $(mktemp -d))
 .El
-.Sh CONTROLS
-.Bl -bullet -compact -width indent
-.It
-hold the left mouse button down to paint
-.It
-hold the middle mouse button down to move the image around
-.It
-press the right mouse button down to pick the color where the mouse is
-.It
-scroll up/down to change the brush size
-.It
-hold D to change to the delete brush
-.It
-hold S for a small brush, hold B for a big one
-.It
-press number keys (1-..) to change the brush color
-.It
-press Ctrl+S to save the image
-.It
-press Ctrl+Z to undo the last change
+.Sh KEYBOARD BINDINGS
+.Bl -tag -width indent
+.It Ctrl+s
+Save the current canvas to a file.
+.It Ctrl+z
+Undo (If compiled with history support).
+.It Ctrl+y
+Redo (If compiled with history support).
+.It r
+Set color to red.
+.It g
+Set color to green.
+.It b
+Set color to blue.
+.It w
+Set color to white.
+.It q
+Set color to black.
+.It o
+Set color to orange.
+.It y
+Set color to yellow.
+.It f
+Set color to fuchsia.
+.It t
+Set color to teal.
+.It c
+Set color to cream.
+.El
+.Sh MOUSE BINDINGS
+.Bl -tag -width indent
+.It Left Mouse Button
+Draw.
+.It Right Mouse Button
+Open the color selection tool.
+.It Middle Mouse Button
+Move around.
+.It Scroll Up/Down
+Change brush size.
 .El
 .Sh SEE ALSO
 .Xr X 7
+.Xr zinc 1
 .Xr png 5
 .Xr xscreenshot 1
 .Sh AUTHORS

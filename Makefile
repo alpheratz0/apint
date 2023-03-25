@@ -5,11 +5,19 @@ include config.mk
 
 all: apint
 
-apint: apint.o
-	$(CC) $(LDFLAGS) -o apint apint.o $(LDLIBS)
+apint.o:    apint.c
+canvas.o:   canvas.c
+picker.o:   picker.c
+utils.o:    utils.c
+history.o:  history.c
+prompt.o:   prompt.c
+
+apint: apint.o canvas.o picker.o utils.o history.o prompt.o
+	$(CC) $(LDFLAGS) -o apint apint.o canvas.o picker.o utils.o \
+		history.o prompt.o $(LDLIBS)
 
 clean:
-	rm -f apint apint.o apint-$(VERSION).tar.gz
+	rm -f apint *.o apint-$(VERSION).tar.gz
 
 install: all
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
@@ -21,7 +29,9 @@ install: all
 
 dist: clean
 	mkdir -p apint-$(VERSION)
-	cp -R COPYING config.mk Makefile README apint.1 apint.c apint-$(VERSION)
+	cp -R COPYING config.mk Makefile README apint.1 apint.c \
+		canvas.c picker.c utils.c history.c prompt.c canvas.h \
+		picker.h utils.h history.h prompt.h apint-$(VERSION)
 	tar -cf apint-$(VERSION).tar apint-$(VERSION)
 	gzip apint-$(VERSION).tar
 	rm -rf apint-$(VERSION)
