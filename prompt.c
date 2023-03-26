@@ -55,7 +55,7 @@ prompt_read(const char *prompt)
 		read_count = -1;
 		total_read_count = 0;
 		left_to_read = 255;
-		output = calloc(left_to_read + 1, sizeof(char));
+		output = xcalloc(left_to_read + 1, sizeof(char));
 
 		while (read_count != 0) {
 			if ((read_count = read(fd[0], output + total_read_count, left_to_read)) < 0)
