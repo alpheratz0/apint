@@ -319,7 +319,7 @@ canvas_save(const Canvas *canvas, const char *path)
 	png_write_info(png, pnginfo);
 	png_set_compression_level(png, 3);
 
-	row = malloc(canvas->width * 3);
+	row = png_malloc(png, canvas->width * 3);
 
 	for (y = 0; y < canvas->height; ++y) {
 		for (x = 0; x < canvas->width; ++x) {
@@ -330,12 +330,12 @@ canvas_save(const Canvas *canvas, const char *path)
 		png_write_row(png, row);
 	}
 
+	png_free(png, row);
 	png_write_end(png, NULL);
 	png_free_data(png, pnginfo, PNG_FREE_ALL, -1);
 	png_destroy_info_struct(png, &pnginfo);
 	png_destroy_write_struct(&png, NULL);
 	fclose(fp);
-	free(row);
 }
 
 extern void
