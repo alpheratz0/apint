@@ -237,21 +237,21 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 		png_set_tRNS_to_alpha(png);
 
 	switch (png_get_color_type(png, pnginfo)) {
-		case PNG_COLOR_TYPE_RGB:
-			png_set_filler(png, 0xff, PNG_FILLER_AFTER);
-			break;
-		case PNG_COLOR_TYPE_PALETTE:
-			png_set_palette_to_rgb(png);
-			png_set_filler(png, 0xff, PNG_FILLER_AFTER);
-			break;
-		case PNG_COLOR_TYPE_GRAY:
-			if (bit_depth < 8)
-				png_set_expand_gray_1_2_4_to_8(png);
-			png_set_filler(png, 0xff, PNG_FILLER_AFTER);
-			png_set_gray_to_rgb(png);
-			break;
-		case PNG_COLOR_TYPE_GRAY_ALPHA:
-			png_set_gray_to_rgb(png);
+	case PNG_COLOR_TYPE_RGB:
+		png_set_filler(png, 0xff, PNG_FILLER_AFTER);
+		break;
+	case PNG_COLOR_TYPE_PALETTE:
+		png_set_palette_to_rgb(png);
+		png_set_filler(png, 0xff, PNG_FILLER_AFTER);
+		break;
+	case PNG_COLOR_TYPE_GRAY:
+		if (bit_depth < 8)
+			png_set_expand_gray_1_2_4_to_8(png);
+		png_set_filler(png, 0xff, PNG_FILLER_AFTER);
+		png_set_gray_to_rgb(png);
+		break;
+	case PNG_COLOR_TYPE_GRAY_ALPHA:
+		png_set_gray_to_rgb(png);
 	}
 
 	png_read_update_info(png, pnginfo);
