@@ -12,6 +12,8 @@ This program requires libxcb, libxcb-cursor, libxcb-image,
 libxcb-shm, libxcb-keysyms, libxcb-xkb, libxcb-icccm
 and libpng to be installed.
 In order to build this program you need to run `make`.
+This program requires dmenu/rofi and notify-send as runtime
+dependencies.
 
 This program is free software; you can redistribute it
 and/or modify it under the terms of the GNU General Public License
