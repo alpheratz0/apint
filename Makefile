@@ -11,10 +11,11 @@ picker.o:   picker.c
 utils.o:    utils.c
 history.o:  history.c
 prompt.o:   prompt.c
+notify.o:   notify.c
 
-apint: apint.o canvas.o picker.o utils.o history.o prompt.o
+apint: apint.o canvas.o picker.o utils.o history.o prompt.o notify.o
 	$(CC) $(LDFLAGS) -o apint apint.o canvas.o picker.o utils.o \
-		history.o prompt.o $(LDLIBS)
+		history.o prompt.o notify.o $(LDLIBS)
 
 clean:
 	rm -f apint *.o apint-$(VERSION).tar.gz
@@ -30,8 +31,9 @@ install: all
 dist: clean
 	mkdir -p apint-$(VERSION)
 	cp -R COPYING config.mk Makefile README apint.1 apint.c \
-		canvas.c picker.c utils.c history.c prompt.c canvas.h \
-		picker.h utils.h history.h prompt.h apint-$(VERSION)
+		canvas.c picker.c utils.c history.c prompt.c notify.c \
+		canvas.h picker.h utils.h history.h prompt.h notify.h \
+		apint-$(VERSION)
 	tar -cf apint-$(VERSION).tar apint-$(VERSION)
 	gzip apint-$(VERSION).tar
 	rm -rf apint-$(VERSION)

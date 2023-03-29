@@ -38,6 +38,7 @@
 #include <stdbool.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
+#include "notify.h"
 #include "utils.h"
 #include "canvas.h"
 #include "picker.h"
@@ -290,17 +291,35 @@ redo(void)
 }
 #endif
 
+static bool
+can_write_to(const char *path)
+{
+	FILE *fp;
+
+	if (NULL == (fp = fopen(path, "w")))
+		return false;
+	fclose(fp);
+	return true;
+}
+
 static void
 save(void)
 {
 	char *path;
+	char err_msg[256];
 
 	path = prompt_read("save as...");
 
 	if (!path)
 		return;
 
-	canvas_save(canvas, path);
+	if (can_write_to(path)) {
+		canvas_save(canvas, path);
+	} else {
+		snprintf(err_msg, sizeof(err_msg), "can't save to %s", path);
+		notify_send("apint", err_msg);
+	}
+
 	free(path);
 }
 
