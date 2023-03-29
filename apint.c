@@ -306,7 +306,7 @@ static void
 save(void)
 {
 	char *path;
-	char err_msg[256];
+	char err_msg[256], suc_msg[256];
 
 	path = prompt_read("save as...");
 
@@ -315,6 +315,8 @@ save(void)
 
 	if (can_write_to(path)) {
 		canvas_save(canvas, path);
+		snprintf(suc_msg, sizeof(suc_msg), "saved drawing succesfully to %s", path);
+		notify_send("apint", suc_msg);
 	} else {
 		snprintf(err_msg, sizeof(err_msg), "can't save to %s", path);
 		notify_send("apint", err_msg);
