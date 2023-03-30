@@ -43,10 +43,10 @@ prompt_read(const char *prompt)
 		freopen("/dev/null", "r", stdin);
 		close(fd[0]);
 		dup2(fd[1], STDOUT_FILENO);
-		execl("/bin/dmenu", "dmenu", "-p", prompt, (char *)(NULL));
-		warn("exec() dmenu failed");
-		execl("/bin/rofi", "rofi", "-dmenu", "-i", "-p", prompt, "-hint-welcome", "", "-hint-result", "", (char *)(NULL));
-		warn("exec() rofi failed");
+		execlp("dmenu", "dmenu", "-p", prompt, (char *)(NULL));
+		warn("execlp() dmenu failed");
+		execlp("rofi", "rofi", "-dmenu", "-i", "-p", prompt, "-hint-welcome", "", "-hint-result", "", (char *)(NULL));
+		warn("execlp() rofi failed");
 		exit(127);
 	} else {
 		close(fd[1]);

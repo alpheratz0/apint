@@ -32,8 +32,8 @@ notify_send(const char *title, const char *body)
 		die("fork failed");
 
 	if (pid == 0) {
-		execl("/bin/notify-send", "notify-send", title, body, (char *)(NULL));
-		warn("exec() notify-send failed");
+		execlp("notify-send", "notify-send", title, body, (char *)(NULL));
+		warn("execlp() notify-send failed");
 		exit(127);
 	} else {
 		if (waitpid(pid, &status, 0) < 0)
