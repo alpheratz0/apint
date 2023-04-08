@@ -58,6 +58,10 @@ typedef struct {
 } DrawInfo;
 
 #ifndef APINT_NO_HISTORY
+#define APINT_HISTORY 1
+#endif
+
+#ifdef APINT_HISTORY
 static History *hist;
 static HistoryUserAction *hist_last_action;
 #endif
@@ -223,7 +227,7 @@ addpoint(int x, int y, uint32_t color, int size, bool add_to_history)
 	int dx, dy;
 	uint32_t prevcol;
 
-#ifndef APINT_NO_HISTORY
+#ifdef APINT_HISTORY
 	int canvasx, canvasy;
 
 	if (add_to_history) {
@@ -254,7 +258,7 @@ addpoint(int x, int y, uint32_t color, int size, bool add_to_history)
 	}
 }
 
-#ifndef APINT_NO_HISTORY
+#ifdef APINT_HISTORY
 static void
 regenfromhist(void)
 {
@@ -357,7 +361,7 @@ h_key_press(xcb_key_press_event_t *ev)
 
 	if (ev->state & XCB_MOD_MASK_CONTROL) {
 		switch (key) {
-#ifndef APINT_NO_HISTORY
+#ifdef APINT_HISTORY
 		case XKB_KEY_z: if (!drawinfo.active) undo(); return;
 		case XKB_KEY_y: if (!drawinfo.active) redo(); return;
 #endif
@@ -444,7 +448,7 @@ h_button_release(xcb_button_release_event_t *ev)
 	switch (ev->detail) {
 	case XCB_BUTTON_INDEX_1:
 		drawinfo.active = false;
-#ifndef APINT_NO_HISTORY
+#ifdef APINT_HISTORY
 		if (NULL == hist_last_action)
 			break;
 		history_do(hist, hist_last_action);
@@ -542,7 +546,7 @@ main(int argc, char **argv)
 
 	picker = picker_new(conn, win, h_picker_color_change);
 
-#ifndef APINT_NO_HISTORY
+#ifdef APINT_HISTORY
 	hist = history_new();
 #endif
 
@@ -568,7 +572,7 @@ main(int argc, char **argv)
 		free(ev);
 	}
 
-#ifndef APINT_NO_HISTORY
+#ifdef APINT_HISTORY
 	history_destroy(hist);
 #endif
 
