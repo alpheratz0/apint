@@ -1,4 +1,4 @@
-.Dd March 25, 2023
+.Dd July 23, 2023
 .Dt APINT 1
 .Sh NAME
 .Nm apint
@@ -7,8 +7,7 @@
 .Nm
 .Op Fl fhv
 .Op Fl l Ar file
-.Op Fl W Ar width
-.Op Fl H Ar height
+.Op Fl s Ar size
 .Sh DESCRIPTION
 The
 .Nm
@@ -23,15 +22,15 @@ show usage
 display the program version
 .It Fl l
 load canvas from png file
-.It Fl W
-create a canvas of that width
-.It Fl H
-create a canvas of that height
+.It Fl s
+create a canvas of that width and height
 .El
 .Sh EXAMPLES
 .Bl -tag -width indent
 .It draw over a freshly taken screenshot
 apint -f -l $(xscreenshot -p -d $(mktemp -d))
+.It create a 640x480 canvas
+apint -s 640x480
 .El
 .Sh KEYBOARD BINDINGS
 .Bl -tag -width indent
