@@ -23,14 +23,14 @@ display the program version
 .It Fl l
 load canvas from png file
 .It Fl s
-create a canvas of that width and height
+create a canvas of the specified size
 .El
 .Sh EXAMPLES
 .Bl -tag -width indent
-.It draw over a freshly taken screenshot
-apint -f -l $(xscreenshot -p -d $(mktemp -d))
 .It create a 640x480 canvas
 apint -s 640x480
+.It draw over a freshly taken screenshot
+apint -f -l $(xscreenshot -p -d $(mktemp -d))
 .El
 .Sh KEYBOARD BINDINGS
 .Bl -tag -width indent
