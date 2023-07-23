@@ -487,7 +487,7 @@ h_picker_color_change(Picker *picker, uint32_t color)
 static void
 usage(void)
 {
-	puts("usage: apint [-fhv] [-l file] [-W width] [-H height]");
+	puts("usage: apint [-fhv] [-l file] [-s size]");
 	exit(0);
 }
 
@@ -496,6 +496,18 @@ version(void)
 {
 	puts("apint version "VERSION);
 	exit(0);
+}
+
+static void
+parse_size(const char *str, int *width, int *height)
+{
+	char *end = NULL;
+	*width = strtol(str, &end, 10);
+	if (!end || *end != 'x' || end == str) {
+		*width = *height = 0;
+		return;
+	}
+	*height = atoi(end+1);
 }
 
 int
@@ -515,8 +527,7 @@ main(int argc, char **argv)
 			case 'v': version(); break;
 			case 'f': start_in_fullscreen = true; break;
 			case 'l': --argc; loadpath = enotnull(*++argv, "path"); break;
-			case 'W': --argc; width = atoi(enotnull(*++argv, "width")); break;
-			case 'H': --argc; height = atoi(enotnull(*++argv, "height")); break;
+			case 's': --argc; parse_size(enotnull(*++argv, "size"), &width, &height); break;
 			default: die("invalid option %s", *argv); break;
 			}
 		} else {
@@ -524,14 +535,14 @@ main(int argc, char **argv)
 		}
 	}
 
-	if (width == 0 || height == 0)
-		die("width or height is invalid");
-
 	if (width <= 5 || height <= 5)
-		die("width or height is too small");
+		die("invalid size");
 
-	if (width > 5000 || height > 5000)
-		die("width or height is too big");
+	if (width > 5000)
+		die("width too big");
+
+	if (height > 5000)
+		die("height too big");
 
 	xwininit();
 
