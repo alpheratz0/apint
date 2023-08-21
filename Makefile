@@ -5,24 +5,9 @@ include config.mk
 
 all: apint
 
-src/apint.o:    src/apint.c
-src/canvas.o:   src/canvas.c
-src/picker.o:   src/picker.c
-src/utils.o:    src/utils.c
-src/history.o:  src/history.c
-src/prompt.o:   src/prompt.c
-src/notify.o:   src/notify.c
-
-OBJ=src/apint.o \
-	src/canvas.o \
-	src/picker.o \
-	src/utils.o \
-	src/history.o \
-	src/prompt.o \
-	src/notify.o
-
-apint: $(OBJ)
-	$(CC) $(LDFLAGS) -o apint $(OBJ) $(LDLIBS)
+apint: src/apint.o src/canvas.o src/picker.o src/utils.o \
+	src/history.o src/prompt.o src/notify.o
+	$(CC) $(LDFLAGS) -o apint src/*.o $(LDLIBS)
 
 clean:
 	rm -f apint src/*.o apint-$(VERSION).tar.gz
