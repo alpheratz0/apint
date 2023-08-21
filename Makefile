@@ -5,34 +5,39 @@ include config.mk
 
 all: apint
 
-apint.o:    apint.c
-canvas.o:   canvas.c
-picker.o:   picker.c
-utils.o:    utils.c
-history.o:  history.c
-prompt.o:   prompt.c
-notify.o:   notify.c
+src/apint.o:    src/apint.c
+src/canvas.o:   src/canvas.c
+src/picker.o:   src/picker.c
+src/utils.o:    src/utils.c
+src/history.o:  src/history.c
+src/prompt.o:   src/prompt.c
+src/notify.o:   src/notify.c
 
-apint: apint.o canvas.o picker.o utils.o history.o prompt.o notify.o
-	$(CC) $(LDFLAGS) -o apint apint.o canvas.o picker.o utils.o \
-		history.o prompt.o notify.o $(LDLIBS)
+OBJ=src/apint.o \
+	src/canvas.o \
+	src/picker.o \
+	src/utils.o \
+	src/history.o \
+	src/prompt.o \
+	src/notify.o
+
+apint: $(OBJ)
+	$(CC) $(LDFLAGS) -o apint $(OBJ) $(LDLIBS)
 
 clean:
-	rm -f apint *.o apint-$(VERSION).tar.gz
+	rm -f apint src/*.o apint-$(VERSION).tar.gz
 
 install: all
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp -f apint $(DESTDIR)$(PREFIX)/bin
 	chmod 755 $(DESTDIR)$(PREFIX)/bin/apint
 	mkdir -p $(DESTDIR)$(MANPREFIX)/man1
-	cp -f apint.1 $(DESTDIR)$(MANPREFIX)/man1
+	cp -f man/apint.1 $(DESTDIR)$(MANPREFIX)/man1
 	chmod 644 $(DESTDIR)$(MANPREFIX)/man1/apint.1
 
 dist: clean
 	mkdir -p apint-$(VERSION)
-	cp -R COPYING config.mk Makefile README apint.1 apint.c \
-		canvas.c picker.c utils.c history.c prompt.c notify.c \
-		canvas.h picker.h utils.h history.h prompt.h notify.h \
+	cp -R COPYING config.mk Makefile README man src include \
 		apint-$(VERSION)
 	tar -cf apint-$(VERSION).tar apint-$(VERSION)
 	gzip apint-$(VERSION).tar
