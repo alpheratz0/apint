@@ -540,10 +540,10 @@ main(int argc, char **argv)
 		die("invalid size");
 
 	if (width > 5000)
-		die("width too big");
+		die("image too wide (max-width: 5000px)");
 
 	if (height > 5000)
-		die("height too big");
+		die("image too tall (max-height: 5000px)");
 
 	xwininit();
 
