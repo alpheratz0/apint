@@ -307,10 +307,32 @@ can_write_to(const char *path)
 	return true;
 }
 
+static char *
+expand_path(const char *path)
+{
+	char *home, *expanded;
+
+	if (!path)
+		return NULL;
+
+	if (path[0] != '~')
+		return xstrdup(path);
+
+	home = getenv("HOME");
+
+	if (home == NULL)
+		return xstrdup(path);
+
+	expanded = xmalloc(strlen(home) + strlen(path));
+	sprintf(expanded, "%s%s", home, path+1);
+
+	return expanded;
+}
+
 static void
 save(void)
 {
-	char *path;
+	char *path, *expanded_path;
 	char err_msg[256], suc_msg[256];
 
 	path = prompt_read("save as...");
@@ -318,8 +340,10 @@ save(void)
 	if (!path)
 		return;
 
-	if (can_write_to(path)) {
-		canvas_save(canvas, path);
+	expanded_path = expand_path(path);
+
+	if (can_write_to(expanded_path)) {
+		canvas_save(canvas, expanded_path);
 		snprintf(suc_msg, sizeof(suc_msg), "saved drawing succesfully to %s", path);
 		notify_send("apint", suc_msg);
 	} else {
@@ -328,6 +352,7 @@ save(void)
 	}
 
 	free(path);
+	free(expanded_path);
 }
 
 static void
