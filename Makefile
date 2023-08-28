@@ -25,12 +25,12 @@ install: all
 	cp -f apint $(DESTDIR)$(PREFIX)/bin
 	chmod 755 $(DESTDIR)$(PREFIX)/bin/apint
 	mkdir -p $(DESTDIR)$(MANPREFIX)/man1
-	cp -f man/apint.1 $(DESTDIR)$(MANPREFIX)/man1
+	cp -f apint.1 $(DESTDIR)$(MANPREFIX)/man1
 	chmod 644 $(DESTDIR)$(MANPREFIX)/man1/apint.1
 
 dist: clean
 	mkdir -p apint-$(VERSION)
-	cp -R COPYING config.mk Makefile README man src include \
+	cp -R COPYING config.mk Makefile README apint.1 src include \
 		apint-$(VERSION)
 	tar -cf apint-$(VERSION).tar apint-$(VERSION)
 	gzip apint-$(VERSION).tar
