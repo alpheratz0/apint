@@ -3,14 +3,22 @@
 
 include config.mk
 
+OBJ=\
+	src/apint.o \
+	src/canvas.o \
+	src/picker.o \
+	src/utils.o \
+	src/history.o \
+	src/prompt.o \
+	src/notify.o
+
 all: apint
 
-apint: src/apint.o src/canvas.o src/picker.o src/utils.o \
-	src/history.o src/prompt.o src/notify.o
-	$(CC) $(LDFLAGS) -o apint src/*.o $(LDLIBS)
+apint: $(OBJ)
+	$(CC) $(LDFLAGS) -o apint $(OBJ) $(LDLIBS)
 
 clean:
-	rm -f apint src/*.o apint-$(VERSION).tar.gz
+	rm -f apint $(OBJ) apint-$(VERSION).tar.gz
 
 install: all
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
