@@ -188,6 +188,12 @@ canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h)
 				depth, c->x.shm.seg, 0);
 	} else {
 		c->shm = 0;
+
+		// FIXME: split source image into
+		//        multiple xcb_image_t objects
+		if (szpx > 16*1024*1024 /* 16mb */)
+			die("image too big for one xcb_image_t");
+
 		c->px = xmalloc(szpx);
 
 		c->x.image = xcb_image_create_native(conn, w, h,
