@@ -91,45 +91,45 @@ __x_check_mit_shm_extension(xcb_connection_t *conn)
 }
 
 static void
-__canvas_keep_visible(Canvas *canvas)
+__canvas_keep_visible(Canvas *c)
 {
-	if (canvas->pos.x < -canvas->width)
-		canvas->pos.x = -canvas->width;
+	if (c->pos.x < -c->width)
+		c->pos.x = -c->width;
 
-	if (canvas->pos.y < -canvas->height)
-		canvas->pos.y = -canvas->height;
+	if (c->pos.y < -c->height)
+		c->pos.y = -c->height;
 
-	if (canvas->pos.x > canvas->viewport_width)
-		canvas->pos.x = canvas->viewport_width;
+	if (c->pos.x > c->viewport_width)
+		c->pos.x = c->viewport_width;
 
-	if (canvas->pos.y > canvas->viewport_height)
-		canvas->pos.y = canvas->viewport_height;
+	if (c->pos.y > c->viewport_height)
+		c->pos.y = c->viewport_height;
 }
 
 static inline uint32_t *
-__canvas_get_pixel_ptr(Canvas *canvas, int x, int y)
+__canvas_get_pixel_ptr(Canvas *c, int x, int y)
 {
-	x -= canvas->pos.x;
-	y -= canvas->pos.y;
+	x -= c->pos.x;
+	y -= c->pos.y;
 
-	if (x >= 0 && x < canvas->width
-			&& y >= 0 && y < canvas->height) {
-		return &canvas->px[y*canvas->width+x];
+	if (x >= 0 && x < c->width
+			&& y >= 0 && y < c->height) {
+		return &c->px[y*c->width+x];
 	}
 
 	return NULL;
 }
 
 static void
-__canvas_set_orig_px_to_current_state(Canvas *canvas)
+__canvas_set_orig_px_to_current_state(Canvas *c)
 {
 	size_t szpx;
-	szpx = sizeof(uint32_t) * canvas->width * canvas->height;
+	szpx = sizeof(uint32_t) * c->width * c->height;
 
-	free(canvas->orig_px);
-	canvas->orig_px = xmalloc(szpx);
+	free(c->orig_px);
+	c->orig_px = xmalloc(szpx);
 
-	memcpy(canvas->orig_px, canvas->px, szpx);
+	memcpy(c->orig_px, c->px, szpx);
 }
 
 extern Canvas *
@@ -211,7 +211,7 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 	png_struct *png;
 	png_info *pnginfo;
 	png_byte **rows, bit_depth;
-	Canvas *canvas;
+	Canvas *c;
 	int16_t x, y;
 
 	if (NULL == (fp = fopen(path, "rb")))
@@ -229,7 +229,7 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 
 	png_init_io(png, fp);
 	png_read_info(png, pnginfo);
-	canvas = canvas_new(conn, win, png_get_image_width(png, pnginfo),
+	c = canvas_new(conn, win, png_get_image_width(png, pnginfo),
 			png_get_image_height(png, pnginfo));
 
 	bit_depth = png_get_bit_depth(png, pnginfo);
@@ -261,19 +261,19 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 
 	png_read_update_info(png, pnginfo);
 
-	rows = png_malloc(png, sizeof(png_byte *) * canvas->height);
+	rows = png_malloc(png, sizeof(png_byte *) * c->height);
 
-	for (y = 0; y < canvas->height; ++y)
+	for (y = 0; y < c->height; ++y)
 		rows[y] = png_malloc(png, png_get_rowbytes(png, pnginfo));
 
 	png_read_image(png, rows);
 
-	for (y = 0; y < canvas->height; ++y) {
-		for (x = 0; x < canvas->width; ++x) {
+	for (y = 0; y < c->height; ++y) {
+		for (x = 0; x < c->width; ++x) {
 			if (rows[y][x*4+3] == 0) {
-				canvas->px[y*canvas->width+x] = 0xffffff;
+				c->px[y*c->width+x] = 0xffffff;
 			} else {
-				canvas->px[y*canvas->width+x] = rows[y][x*4+0] << 16 |
+				c->px[y*c->width+x] = rows[y][x*4+0] << 16 |
 								rows[y][x*4+1] << 8 |
 								rows[y][x*4+2];
 			}
@@ -281,7 +281,7 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 		png_free(png, rows[y]);
 	}
 
-	__canvas_set_orig_px_to_current_state(canvas);
+	__canvas_set_orig_px_to_current_state(c);
 
 	png_free(png, rows);
 	png_read_end(png, NULL);
@@ -290,11 +290,11 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 	png_destroy_read_struct(&png, NULL, NULL);
 	fclose(fp);
 
-	return canvas;
+	return c;
 }
 
 extern void
-canvas_save(const Canvas *canvas, const char *path)
+canvas_save(const Canvas *c, const char *path)
 {
 	int x, y;
 	FILE *fp;
@@ -316,7 +316,7 @@ canvas_save(const Canvas *canvas, const char *path)
 		die("aborting due to libpng error");
 
 	png_init_io(png, fp);
-	png_set_IHDR(png, pnginfo, canvas->width, canvas->height, 8,
+	png_set_IHDR(png, pnginfo, c->width, c->height, 8,
 		PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
 		PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE
 	);
@@ -324,13 +324,13 @@ canvas_save(const Canvas *canvas, const char *path)
 	png_write_info(png, pnginfo);
 	png_set_compression_level(png, 3);
 
-	row = png_malloc(png, canvas->width * 3);
+	row = png_malloc(png, c->width * 3);
 
-	for (y = 0; y < canvas->height; ++y) {
-		for (x = 0; x < canvas->width; ++x) {
-			row[x*3+0] = (canvas->px[y*canvas->width+x] & 0xff0000) >> 16;
-			row[x*3+1] = (canvas->px[y*canvas->width+x] & 0xff00) >> 8;
-			row[x*3+2] = canvas->px[y*canvas->width+x] & 0xff;
+	for (y = 0; y < c->height; ++y) {
+		for (x = 0; x < c->width; ++x) {
+			row[x*3+0] = (c->px[y*c->width+x] & 0xff0000) >> 16;
+			row[x*3+1] = (c->px[y*c->width+x] & 0xff00) >> 8;
+			row[x*3+2] = c->px[y*c->width+x] & 0xff;
 		}
 		png_write_row(png, row);
 	}
@@ -344,90 +344,90 @@ canvas_save(const Canvas *canvas, const char *path)
 }
 
 extern void
-canvas_destroy(Canvas *canvas)
+canvas_destroy(Canvas *c)
 {
-	xcb_free_gc(canvas->conn, canvas->gc);
+	xcb_free_gc(c->conn, c->gc);
 
-	if (canvas->shm) {
-		shmctl(canvas->x.shm.id, IPC_RMID, NULL);
-		xcb_shm_detach(canvas->conn, canvas->x.shm.seg);
-		shmdt(canvas->px);
-		xcb_free_pixmap(canvas->conn, canvas->x.shm.pixmap);
+	if (c->shm) {
+		shmctl(c->x.shm.id, IPC_RMID, NULL);
+		xcb_shm_detach(c->conn, c->x.shm.seg);
+		shmdt(c->px);
+		xcb_free_pixmap(c->conn, c->x.shm.pixmap);
 	} else {
-		xcb_image_destroy(canvas->x.image);
+		xcb_image_destroy(c->x.image);
 	}
 
-	free(canvas->orig_px);
-	free(canvas);
+	free(c->orig_px);
+	free(c);
 }
 
 extern void
-canvas_move_relative(Canvas *canvas, int offx, int offy)
+canvas_move_relative(Canvas *c, int offx, int offy)
 {
-	canvas->pos.x += offx;
-	canvas->pos.y += offy;
+	c->pos.x += offx;
+	c->pos.y += offy;
 
-	__canvas_keep_visible(canvas);
+	__canvas_keep_visible(c);
 }
 
 extern void
-canvas_set_viewport(Canvas *canvas, int vw, int vh)
+canvas_set_viewport(Canvas *c, int vw, int vh)
 {
-	if (canvas->viewport_width == 0 || canvas->viewport_height == 0) {
-		canvas->pos.x = (vw - canvas->width) / 2;
-		canvas->pos.y = (vh - canvas->height) / 2;
+	if (c->viewport_width == 0 || c->viewport_height == 0) {
+		c->pos.x = (vw - c->width) / 2;
+		c->pos.y = (vh - c->height) / 2;
 	} else {
-		canvas->pos.x += (vw - canvas->viewport_width) / 2;
-		canvas->pos.y += (vh - canvas->viewport_height) / 2;
+		c->pos.x += (vw - c->viewport_width) / 2;
+		c->pos.y += (vh - c->viewport_height) / 2;
 	}
 
-	canvas->viewport_width = vw;
-	canvas->viewport_height = vh;
+	c->viewport_width = vw;
+	c->viewport_height = vh;
 
-	__canvas_keep_visible(canvas);
+	__canvas_keep_visible(c);
 }
 
 extern void
-canvas_render(Canvas *canvas)
+canvas_render(Canvas *c)
 {
-	if (canvas->pos.y > 0)
-		xcb_clear_area(canvas->conn, 0, canvas->win, 0, 0, canvas->viewport_width, canvas->pos.y);
+	if (c->pos.y > 0)
+		xcb_clear_area(c->conn, 0, c->win, 0, 0, c->viewport_width, c->pos.y);
 
-	if (canvas->pos.y + canvas->height < canvas->viewport_height)
-		xcb_clear_area(canvas->conn, 0, canvas->win, 0, canvas->pos.y + canvas->height,
-				canvas->viewport_width, canvas->viewport_height - (canvas->pos.y + canvas->height));
+	if (c->pos.y + c->height < c->viewport_height)
+		xcb_clear_area(c->conn, 0, c->win, 0, c->pos.y + c->height,
+				c->viewport_width, c->viewport_height - (c->pos.y + c->height));
 
-	if (canvas->pos.x > 0)
-		xcb_clear_area(canvas->conn, 0, canvas->win, 0, 0, canvas->pos.x, canvas->viewport_height);
+	if (c->pos.x > 0)
+		xcb_clear_area(c->conn, 0, c->win, 0, 0, c->pos.x, c->viewport_height);
 
-	if (canvas->pos.x + canvas->width < canvas->viewport_width)
-		xcb_clear_area(canvas->conn, 0, canvas->win, canvas->pos.x + canvas->width, 0,
-				canvas->viewport_width - (canvas->pos.x + canvas->width), canvas->viewport_height);
+	if (c->pos.x + c->width < c->viewport_width)
+		xcb_clear_area(c->conn, 0, c->win, c->pos.x + c->width, 0,
+				c->viewport_width - (c->pos.x + c->width), c->viewport_height);
 
-	if (canvas->shm) {
-		xcb_copy_area(canvas->conn, canvas->x.shm.pixmap, canvas->win,
-				canvas->gc, 0, 0, canvas->pos.x, canvas->pos.y, canvas->width, canvas->height);
+	if (c->shm) {
+		xcb_copy_area(c->conn, c->x.shm.pixmap, c->win,
+				c->gc, 0, 0, c->pos.x, c->pos.y, c->width, c->height);
 	} else {
-		xcb_image_put(canvas->conn, canvas->win, canvas->gc,
-				canvas->x.image, canvas->pos.x, canvas->pos.y, 0);
+		xcb_image_put(c->conn, c->win, c->gc,
+				c->x.image, c->pos.x, c->pos.y, 0);
 	}
 
-	xcb_flush(canvas->conn);
+	xcb_flush(c->conn);
 }
 
 extern void
-canvas_set_pixel(Canvas *canvas, int x, int y, uint32_t color)
+canvas_set_pixel(Canvas *c, int x, int y, uint32_t color)
 {
 	uint32_t *px;
-	if (NULL != (px = __canvas_get_pixel_ptr(canvas, x, y)))
+	if (NULL != (px = __canvas_get_pixel_ptr(c, x, y)))
 		*px = color;
 }
 
 extern int
-canvas_get_pixel(Canvas *canvas, int x, int y, uint32_t *color)
+canvas_get_pixel(Canvas *c, int x, int y, uint32_t *color)
 {
 	uint32_t *px;
-	if (NULL != (px = __canvas_get_pixel_ptr(canvas, x, y))) {
+	if (NULL != (px = __canvas_get_pixel_ptr(c, x, y))) {
 		*color = *px;
 		return 1;
 	}
@@ -435,27 +435,27 @@ canvas_get_pixel(Canvas *canvas, int x, int y, uint32_t *color)
 }
 
 extern void
-canvas_viewport_to_canvas_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y)
+canvas_viewport_to_canvas_pos(Canvas *c, int x, int y, int *out_x, int *out_y)
 {
-	*out_x = x - canvas->pos.x;
-	*out_y = y - canvas->pos.y;
+	*out_x = x - c->pos.x;
+	*out_y = y - c->pos.y;
 }
 
 extern void
-canvas_canvas_to_viewport_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y)
+canvas_canvas_to_viewport_pos(Canvas *c, int x, int y, int *out_x, int *out_y)
 {
-	*out_x = x + canvas->pos.x;
-	*out_y = y + canvas->pos.y;
+	*out_x = x + c->pos.x;
+	*out_y = y + c->pos.y;
 }
 
 extern void
-canvas_clear(Canvas *canvas)
+canvas_clear(Canvas *c)
 {
 	size_t szpx;
-	szpx = sizeof(uint32_t) * canvas->width * canvas->height;
-	if (canvas->orig_px) {
-		memcpy(canvas->px, canvas->orig_px, szpx);
+	szpx = sizeof(uint32_t) * c->width * c->height;
+	if (c->orig_px) {
+		memcpy(c->px, c->orig_px, szpx);
 	} else {
-		memset(canvas->px, 255, szpx);
+		memset(c->px, 255, szpx);
 	}
 }

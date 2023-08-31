@@ -30,31 +30,31 @@ extern Canvas *
 canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path);
 
 extern void
-canvas_save(const Canvas *canvas, const char *path);
+canvas_save(const Canvas *c, const char *path);
 
 extern void
-canvas_destroy(Canvas *canvas);
+canvas_destroy(Canvas *c);
 
 extern void
-canvas_move_relative(Canvas *canvas, int offx, int offy);
+canvas_move_relative(Canvas *c, int offx, int offy);
 
 extern void
-canvas_set_viewport(Canvas *canvas, int vw, int vh);
+canvas_set_viewport(Canvas *c, int vw, int vh);
 
 extern void
-canvas_render(Canvas *canvas);
+canvas_render(Canvas *c);
 
 extern void
-canvas_set_pixel(Canvas *canvas, int x, int y, uint32_t color);
+canvas_set_pixel(Canvas *c, int x, int y, uint32_t color);
 
 extern int
-canvas_get_pixel(Canvas *canvas, int x, int y, uint32_t *color);
+canvas_get_pixel(Canvas *c, int x, int y, uint32_t *color);
 
 extern void
-canvas_viewport_to_canvas_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y);
+canvas_viewport_to_canvas_pos(Canvas *c, int x, int y, int *out_x, int *out_y);
 
 extern void
-canvas_canvas_to_viewport_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y);
+canvas_canvas_to_viewport_pos(Canvas *c, int x, int y, int *out_x, int *out_y);
 
 extern void
-canvas_clear(Canvas *canvas);
+canvas_clear(Canvas *c);
