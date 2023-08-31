@@ -234,7 +234,7 @@ addpoint(int x, int y, uint32_t color, int size, bool add_to_history)
 	if (add_to_history) {
 		if (NULL == hist_last_action)
 			hist_last_action = history_user_action_new();
-		canvas_camera_to_canvas_pos(canvas, x, y, &canvasx, &canvasy);
+		canvas_viewport_to_canvas_pos(canvas, x, y, &canvasx, &canvasy);
 		history_user_action_push_atomic(hist_last_action,
 				history_atomic_action_new(canvasx, canvasy,
 					color, size));
@@ -269,7 +269,7 @@ regenfromhist(void)
 
 	for (hua = hist->root; hua != hist->current->next; hua = hua->next) {
 		for (haa = hua->aa; haa; haa = haa->next) {
-			canvas_canvas_to_camera_pos(canvas, haa->x, haa->y, &x, &y);
+			canvas_canvas_to_viewport_pos(canvas, haa->x, haa->y, &x, &y);
 			addpoint(x, y, haa->color, haa->size, false);
 		}
 	}
@@ -452,13 +452,13 @@ h_motion_notify(xcb_motion_notify_event_t *ev)
 	int dx, dy;
 
 	if (draginfo.active) {
-		dx = draginfo.x - ev->event_x;
-		dy = draginfo.y - ev->event_y;
+		dx = ev->event_x - draginfo.x;
+		dy = ev->event_y - draginfo.y;
 
 		draginfo.x = ev->event_x;
 		draginfo.y = ev->event_y;
 
-		canvas_camera_move_relative(canvas, dx, dy);
+		canvas_move_relative(canvas, dx, dy);
 		canvas_render(canvas);
 	}
 
@@ -493,7 +493,6 @@ static void
 h_configure_notify(xcb_configure_notify_event_t *ev)
 {
 	canvas_set_viewport(canvas, ev->width, ev->height);
-	canvas_camera_to_center(canvas);
 }
 
 static void

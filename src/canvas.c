@@ -32,16 +32,12 @@
 #include "canvas.h"
 #include "utils.h"
 
-typedef struct {
-	int x;
-	int y;
-} Vector2;
-
 struct Canvas {
-	/* camera position */
-	Vector2 pos;
+	struct {
+		int x;
+		int y;
+	} pos;
 
-	/* camera width & height */
 	int viewport_width;
 	int viewport_height;
 
@@ -97,24 +93,24 @@ __x_check_mit_shm_extension(xcb_connection_t *conn)
 static void
 __canvas_keep_visible(Canvas *canvas)
 {
-	if (canvas->pos.x > canvas->width)
-		canvas->pos.x = canvas->width;
+	if (canvas->pos.x < -canvas->width)
+		canvas->pos.x = -canvas->width;
 
-	if (canvas->pos.y > canvas->height)
-		canvas->pos.y = canvas->height;
+	if (canvas->pos.y < -canvas->height)
+		canvas->pos.y = -canvas->height;
 
-	if (canvas->pos.x < -canvas->viewport_width)
-		canvas->pos.x = -canvas->viewport_width;
+	if (canvas->pos.x > canvas->viewport_width)
+		canvas->pos.x = canvas->viewport_width;
 
-	if (canvas->pos.y < -canvas->viewport_height)
-		canvas->pos.y = -canvas->viewport_height;
+	if (canvas->pos.y > canvas->viewport_height)
+		canvas->pos.y = canvas->viewport_height;
 }
 
 static inline uint32_t *
 __canvas_get_pixel_ptr(Canvas *canvas, int x, int y)
 {
-	x += canvas->pos.x;
-	y += canvas->pos.y;
+	x -= canvas->pos.x;
+	y -= canvas->pos.y;
 
 	if (x >= 0 && x < canvas->width
 			&& y >= 0 && y < canvas->height) {
@@ -160,6 +156,8 @@ canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h)
 	c->width = w;
 	c->height = h;
 	c->orig_px = NULL;
+	c->viewport_width = 0;
+	c->viewport_height = 0;
 
 	c->gc = xcb_generate_id(conn);
 	xcb_create_gc(conn, c->gc, win, 0, NULL);
@@ -364,7 +362,7 @@ canvas_destroy(Canvas *canvas)
 }
 
 extern void
-canvas_camera_move_relative(Canvas *canvas, int offx, int offy)
+canvas_move_relative(Canvas *canvas, int offx, int offy)
 {
 	canvas->pos.x += offx;
 	canvas->pos.y += offy;
@@ -373,15 +371,16 @@ canvas_camera_move_relative(Canvas *canvas, int offx, int offy)
 }
 
 extern void
-canvas_camera_to_center(Canvas *canvas)
-{
-	canvas->pos.x = -(canvas->viewport_width - canvas->width) / 2;
-	canvas->pos.y = -(canvas->viewport_height - canvas->height) / 2;
-}
-
-extern void
 canvas_set_viewport(Canvas *canvas, int vw, int vh)
 {
+	if (canvas->viewport_width == 0 || canvas->viewport_height == 0) {
+		canvas->pos.x = (vw - canvas->width) / 2;
+		canvas->pos.y = (vh - canvas->height) / 2;
+	} else {
+		canvas->pos.x += (vw - canvas->viewport_width) / 2;
+		canvas->pos.y += (vh - canvas->viewport_height) / 2;
+	}
+
 	canvas->viewport_width = vw;
 	canvas->viewport_height = vh;
 
@@ -391,26 +390,26 @@ canvas_set_viewport(Canvas *canvas, int vw, int vh)
 extern void
 canvas_render(Canvas *canvas)
 {
-	if (-canvas->pos.y > 0)
-		xcb_clear_area(canvas->conn, 0, canvas->win, 0, 0, canvas->viewport_width, -canvas->pos.y);
+	if (canvas->pos.y > 0)
+		xcb_clear_area(canvas->conn, 0, canvas->win, 0, 0, canvas->viewport_width, canvas->pos.y);
 
-	if (-canvas->pos.y + canvas->height < canvas->viewport_height)
-		xcb_clear_area(canvas->conn, 0, canvas->win, 0, -canvas->pos.y + canvas->height,
-				canvas->viewport_width, canvas->height + canvas->pos.y + canvas->height);
+	if (canvas->pos.y + canvas->height < canvas->viewport_height)
+		xcb_clear_area(canvas->conn, 0, canvas->win, 0, canvas->pos.y + canvas->height,
+				canvas->viewport_width, canvas->viewport_height - (canvas->pos.y + canvas->height));
 
-	if (-canvas->pos.x > 0)
-		xcb_clear_area(canvas->conn, 0, canvas->win, 0, 0, -canvas->pos.x, canvas->viewport_height);
+	if (canvas->pos.x > 0)
+		xcb_clear_area(canvas->conn, 0, canvas->win, 0, 0, canvas->pos.x, canvas->viewport_height);
 
-	if (-canvas->pos.x + canvas->width < canvas->viewport_width)
-		xcb_clear_area(canvas->conn, 0, canvas->win, -canvas->pos.x + canvas->width, 0,
-				canvas->width + canvas->pos.x + canvas->width, canvas->viewport_width);
+	if (canvas->pos.x + canvas->width < canvas->viewport_width)
+		xcb_clear_area(canvas->conn, 0, canvas->win, canvas->pos.x + canvas->width, 0,
+				canvas->viewport_width - (canvas->pos.x + canvas->width), canvas->viewport_height);
 
 	if (canvas->shm) {
 		xcb_copy_area(canvas->conn, canvas->x.shm.pixmap, canvas->win,
-				canvas->gc, 0, 0, -canvas->pos.x, -canvas->pos.y, canvas->width, canvas->height);
+				canvas->gc, 0, 0, canvas->pos.x, canvas->pos.y, canvas->width, canvas->height);
 	} else {
 		xcb_image_put(canvas->conn, canvas->win, canvas->gc,
-				canvas->x.image, -canvas->pos.x, -canvas->pos.y, 0);
+				canvas->x.image, canvas->pos.x, canvas->pos.y, 0);
 	}
 
 	xcb_flush(canvas->conn);
@@ -436,17 +435,17 @@ canvas_get_pixel(Canvas *canvas, int x, int y, uint32_t *color)
 }
 
 extern void
-canvas_camera_to_canvas_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y)
-{
-	*out_x = x + canvas->pos.x;
-	*out_y = y + canvas->pos.y;
-}
-
-extern void
-canvas_canvas_to_camera_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y)
+canvas_viewport_to_canvas_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y)
 {
 	*out_x = x - canvas->pos.x;
 	*out_y = y - canvas->pos.y;
+}
+
+extern void
+canvas_canvas_to_viewport_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y)
+{
+	*out_x = x + canvas->pos.x;
+	*out_y = y + canvas->pos.y;
 }
 
 extern void

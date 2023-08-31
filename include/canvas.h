@@ -36,10 +36,7 @@ extern void
 canvas_destroy(Canvas *canvas);
 
 extern void
-canvas_camera_move_relative(Canvas *canvas, int offx, int offy);
-
-extern void
-canvas_camera_to_center(Canvas *canvas);
+canvas_move_relative(Canvas *canvas, int offx, int offy);
 
 extern void
 canvas_set_viewport(Canvas *canvas, int vw, int vh);
@@ -54,10 +51,10 @@ extern int
 canvas_get_pixel(Canvas *canvas, int x, int y, uint32_t *color);
 
 extern void
-canvas_camera_to_canvas_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y);
+canvas_viewport_to_canvas_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y);
 
 extern void
-canvas_canvas_to_camera_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y);
+canvas_canvas_to_viewport_pos(Canvas *canvas, int x, int y, int *out_x, int *out_y);
 
 extern void
 canvas_clear(Canvas *canvas);
