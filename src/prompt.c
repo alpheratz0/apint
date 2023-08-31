@@ -48,7 +48,7 @@ prompt_read(const char *prompt)
 		warn("execlp() dmenu failed");
 		execlp("rofi", "rofi", "-dmenu", "-i", "-p", prompt, "-hint-welcome", "", "-hint-result", "", (char *)(NULL));
 		warn("execlp() rofi failed");
-		exit(127);
+		_exit(127);
 	} else {
 		close(fd[1]);
 

@@ -35,7 +35,7 @@ notify_send(const char *title, const char *body)
 	if (pid == 0) {
 		execlp("notify-send", "notify-send", title, body, (char *)(NULL));
 		warn("execlp() notify-send failed");
-		exit(127);
+		_exit(127);
 	} else {
 		if (waitpid(pid, &status, 0) < 0)
 			die("waitpid");
