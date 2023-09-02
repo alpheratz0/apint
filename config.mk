@@ -1,7 +1,7 @@
 # Copyright (C) 2022-2023 <alpheratz99@protonmail.com>
 # This program is free software.
 
-VERSION=0.7.1
+VERSION=0.7.2
 CC=cc
 INCS=-I/usr/X11R6/include -Iinclude
 CFLAGS=-std=c99 -pedantic -Wall -Wextra -Os $(INCS) -DVERSION=\"$(VERSION)\"
