@@ -271,9 +271,10 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 	for (y = 0; y < c->height; ++y) {
 		for (x = 0; x < c->width; ++x) {
 			if (rows[y][x*4+3] == 0) {
-				c->px[y*c->width+x] = 0xffffff;
+				c->px[y*c->width+x] = (x/9+y/9)%2 == 0 ? 0xe6e6e6 : 0xffffff;
 			} else {
-				c->px[y*c->width+x] = rows[y][x*4+0] << 16 |
+				c->px[y*c->width+x] = 0xff << 24 |
+								rows[y][x*4+0] << 16 |
 								rows[y][x*4+1] << 8 |
 								rows[y][x*4+2];
 			}
@@ -317,20 +318,21 @@ canvas_save(const Canvas *c, const char *path)
 
 	png_init_io(png, fp);
 	png_set_IHDR(png, pnginfo, c->width, c->height, 8,
-		PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
+		PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE,
 		PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE
 	);
 
 	png_write_info(png, pnginfo);
 	png_set_compression_level(png, 3);
 
-	row = png_malloc(png, c->width * 3);
+	row = png_malloc(png, c->width * 4);
 
 	for (y = 0; y < c->height; ++y) {
 		for (x = 0; x < c->width; ++x) {
-			row[x*3+0] = (c->px[y*c->width+x] & 0xff0000) >> 16;
-			row[x*3+1] = (c->px[y*c->width+x] & 0xff00) >> 8;
-			row[x*3+2] = c->px[y*c->width+x] & 0xff;
+			row[x*4+0] = (c->px[y*c->width+x] >> 16) & 0xff;
+			row[x*4+1] = (c->px[y*c->width+x] >>  8) & 0xff;
+			row[x*4+2] = (c->px[y*c->width+x] >>  0) & 0xff;
+			row[x*4+3] = (c->px[y*c->width+x] >> 24) & 0xff;
 		}
 		png_write_row(png, row);
 	}
@@ -419,8 +421,11 @@ extern void
 canvas_set_pixel(Canvas *c, int x, int y, uint32_t color)
 {
 	uint32_t *px;
-	if (NULL != (px = __canvas_get_pixel_ptr(c, x, y)))
-		*px = color;
+	if (NULL != (px = __canvas_get_pixel_ptr(c, x, y))) {
+		*px = (color & 0xff000000) == 0 ?
+			((x/9+y/9)%2 == 0 ? 0xe6e6e6 : 0xffffff) :
+			color;
+	}
 }
 
 extern int

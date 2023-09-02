@@ -397,16 +397,17 @@ h_key_press(xcb_key_press_event_t *ev)
 	}
 
 	switch (key) {
-	case XKB_KEY_r: drawinfo.color = 0xb81c00; break; /* Red */
-	case XKB_KEY_g: drawinfo.color = 0x50c878; break; /* Green */
-	case XKB_KEY_b: drawinfo.color = 0x1239e6; break; /* Blue */
-	case XKB_KEY_w: drawinfo.color = 0xffffff; break; /* White */
-	case XKB_KEY_q: drawinfo.color = 0x000000; break; /* Black */
-	case XKB_KEY_o: drawinfo.color = 0xcc551f; break; /* Orange */
-	case XKB_KEY_y: drawinfo.color = 0xffff00; break; /* Yellow */
-	case XKB_KEY_f: drawinfo.color = 0xca2c92; break; /* Fuchsia */
-	case XKB_KEY_t: drawinfo.color = 0x008080; break; /* Teal */
-	case XKB_KEY_c: drawinfo.color = 0xfffdd0; break; /* Cream */
+	case XKB_KEY_r: drawinfo.color = 0xffb81c00; break; /* Red */
+	case XKB_KEY_g: drawinfo.color = 0xff50c878; break; /* Green */
+	case XKB_KEY_b: drawinfo.color = 0xff1239e6; break; /* Blue */
+	case XKB_KEY_w: drawinfo.color = 0xffffffff; break; /* White */
+	case XKB_KEY_q: drawinfo.color = 0xff000000; break; /* Black */
+	case XKB_KEY_o: drawinfo.color = 0xffcc551f; break; /* Orange */
+	case XKB_KEY_y: drawinfo.color = 0xffffff00; break; /* Yellow */
+	case XKB_KEY_f: drawinfo.color = 0xffca2c92; break; /* Fuchsia */
+	case XKB_KEY_t: drawinfo.color = 0xff008080; break; /* Teal */
+	case XKB_KEY_c: drawinfo.color = 0xfffffdd0; break; /* Cream */
+	case XKB_KEY_z: drawinfo.color = 0x00000000; break; /* Transparent */
 	}
 }
 
@@ -506,7 +507,7 @@ static void
 h_picker_color_change(Picker *picker, uint32_t color)
 {
 	(void) picker;
-	drawinfo.color = color;
+	drawinfo.color = 0xff000000 | color;
 }
 
 static void
@@ -571,7 +572,7 @@ main(int argc, char **argv)
 
 	xwininit();
 
-	drawinfo.color = 0x000000;
+	drawinfo.color = 0xff000000;
 	drawinfo.brush_size = 5;
 
 	if (NULL == loadpath) {
