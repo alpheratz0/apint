@@ -20,7 +20,6 @@
 #include <errno.h>
 #include <setjmp.h>
 #include <string.h>
-#include <assert.h>
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
 #include <xcb/xcb_image.h>
@@ -33,31 +32,21 @@
 #include "canvas.h"
 #include "utils.h"
 
+#define SHMAT_INVALID_MEM ((void *)(-1))
+
 struct Canvas {
-	struct {
-		int x;
-		int y;
-	} pos;
-
-	int viewport_width;
-	int viewport_height;
-
-	int width;
-	int height;
-	uint32_t *px;
-	uint32_t *vpx;
-	uint32_t *orig_px;
-	uint32_t bg;
-
-	/* damage */
-	int damaged_x1, damaged_y1;
-	int damaged_x2, damaged_y2;
-
-	/* X11 */
 	xcb_connection_t *conn;
 	xcb_window_t win;
-	int shm;
 	xcb_gcontext_t gc;
+	xcb_point_t damage[2];
+	xcb_point_t pos;
+	int width, height;
+	int viewport_width;
+	int viewport_height;
+	uint32_t *px_raw;
+	uint32_t *px_visual;
+	uint32_t *px_snapshot;
+	int shm;
 	union {
 		struct {
 			int id;
@@ -97,11 +86,24 @@ __x_check_mit_shm_extension(xcb_connection_t *conn)
 	return 0;
 }
 
+static uint8_t
+__x_get_screen_depth(xcb_connection_t *conn)
+{
+	xcb_screen_t *screen;
+
+	screen = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
+
+	if (NULL == screen)
+		die("can't get default screen");
+
+	return screen->root_depth;
+}
+
 static int
 __canvas_is_damaged(Canvas *c)
 {
-	if (c->damaged_x1 == -1 || c->damaged_x2 == -1 ||
-			c->damaged_y1 == -1 || c->damaged_y2 == -1) {
+	if (c->damage[0].x == -1 || c->damage[1].x == -1 ||
+			c->damage[0].y == -1 || c->damage[1].y == -1) {
 		return 0;
 	}
 	return 1;
@@ -114,16 +116,16 @@ __canvas_damage(Canvas *c, int x, int y)
 		return;
 
 	if (!__canvas_is_damaged(c)) {
-		c->damaged_x1 = c->damaged_x2 = x;
-		c->damaged_y1 = c->damaged_y2 = y;
+		c->damage[0].x = c->damage[1].x = x;
+		c->damage[0].y = c->damage[1].y = y;
 		return;
 	}
 
-	c->damaged_x1 = MIN(c->damaged_x1, x);
-	c->damaged_y1 = MIN(c->damaged_y1, y);
+	c->damage[0].x = MIN(c->damage[0].x, x);
+	c->damage[0].y = MIN(c->damage[0].y, y);
 
-	c->damaged_x2 = MAX(c->damaged_x2, x);
-	c->damaged_y2 = MAX(c->damaged_y2, y);
+	c->damage[1].x = MAX(c->damage[1].x, x);
+	c->damage[1].y = MAX(c->damage[1].y, y);
 }
 
 static void
@@ -150,16 +152,16 @@ __canvas_damage_process(Canvas *c)
 		return;
 	}
 
-	for (y = c->damaged_y1; y <= c->damaged_y2; ++y) {
-		for (x = c->damaged_x1; x <= c->damaged_x2; ++x) {
-			color = c->px[y * c->width + x];
+	for (y = c->damage[0].y; y <= c->damage[1].y; ++y) {
+		for (x = c->damage[0].x; x <= c->damage[1].x; ++x) {
+			color = c->px_raw[y * c->width + x];
 			sa = ((x / 9 + y / 9) % 2 == 0 ? 0x646464 : 0x909090);
-			c->vpx[y * c->width + x] = color_mix(sa, color, ALPHA(color));
+			c->px_visual[y * c->width + x] = color_mix(sa, color, ALPHA(color));
 		}
 	}
 
-	c->damaged_x1 = c->damaged_x2 = -1;
-	c->damaged_y1 = c->damaged_y2 = -1;
+	c->damage[0].x = c->damage[1].x = -1;
+	c->damage[0].y = c->damage[1].y = -1;
 }
 
 static void
@@ -167,104 +169,101 @@ __canvas_keep_visible(Canvas *c)
 {
 	if (c->pos.x < -c->width)
 		c->pos.x = -c->width;
-
 	if (c->pos.y < -c->height)
 		c->pos.y = -c->height;
-
 	if (c->pos.x > c->viewport_width)
 		c->pos.x = c->viewport_width;
-
 	if (c->pos.y > c->viewport_height)
 		c->pos.y = c->viewport_height;
 }
 
 static void
-__canvas_set_orig_px_to_current_state(Canvas *c)
+__canvas_fill(Canvas *c, uint32_t color)
 {
-	size_t szpx;
-	szpx = sizeof(uint32_t) * c->width * c->height;
+	int idx;
 
-	free(c->orig_px);
-	c->orig_px = xmalloc(szpx);
+	for (idx = 0; idx < c->width * c->height; ++idx)
+		c->px_raw[idx] = color;
 
-	memcpy(c->orig_px, c->px, szpx);
+	__canvas_damage_full(c);
+}
+
+static void
+__canvas_take_snapshot(Canvas *c)
+{
+	free(c->px_snapshot);
+	c->px_snapshot = xmalloc(4*c->width*c->height);
+	memcpy(c->px_snapshot, c->px_raw, 4*c->width*c->height);
+}
+
+static void
+__canvas_restore_snapshot(Canvas *c)
+{
+	if (NULL == c->px_snapshot)
+		return;
+	memcpy(c->px_raw, c->px_snapshot, 4*c->width*c->height);
+	__canvas_damage_full(c);
 }
 
 extern Canvas *
 canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h, uint32_t bg)
 {
 	Canvas *c;
-	size_t szpx;
-	xcb_screen_t *scr;
-	uint8_t depth;
 
-	assert(conn != NULL);
-	assert(w > 0);
-	assert(h > 0);
-
-	scr = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
-	assert(scr != NULL);
-
-	szpx = w * h * sizeof(uint32_t);
 	c = xcalloc(1, sizeof(Canvas));
-	depth = scr->root_depth;
 
 	c->conn = conn;
 	c->win = win;
 	c->width = w;
 	c->height = h;
-	c->px = xmalloc(szpx);
-	c->orig_px = NULL;
-	c->viewport_width = 0;
-	c->viewport_height = 0;
-	c->damaged_x1 = c->damaged_y1 = -1;
-	c->damaged_x2 = c->damaged_y2 = -1;
-	c->bg = bg;
-
+	c->px_raw = xmalloc(w*h*4);
+	c->damage[0].x = c->damage[0].y = -1;
+	c->damage[1].x = c->damage[1].y = -1;
 	c->gc = xcb_generate_id(conn);
+	c->shm = __x_check_mit_shm_extension(conn);
+
 	xcb_create_gc(conn, c->gc, win, 0, NULL);
 
-	if (__x_check_mit_shm_extension(conn)) {
-		c->shm = 1;
-
-		c->x.shm.seg = xcb_generate_id(conn);
+	if (c->shm) {
+		c->x.shm.seg    = xcb_generate_id(conn);
 		c->x.shm.pixmap = xcb_generate_id(conn);
-		c->x.shm.id = shmget(IPC_PRIVATE, szpx, IPC_CREAT | 0600);
+		c->x.shm.id     = shmget(IPC_PRIVATE, w*h*4, IPC_CREAT|0600);
 
 		if (c->x.shm.id < 0)
-			die("shmget failed");
+			die("shmget failed: %s", strerror(errno));
 
-		c->vpx = shmat(c->x.shm.id, NULL, 0);
+		c->px_visual = shmat(c->x.shm.id, NULL, 0);
 
-		if (c->vpx == (void *) -1) {
+		if (SHMAT_INVALID_MEM == c->px_visual) {
 			shmctl(c->x.shm.id, IPC_RMID, NULL);
-			die("shmat failed");
+			die("shmat failed: %s", strerror(errno));
 		}
 
 		xcb_shm_attach(conn, c->x.shm.seg, c->x.shm.id, 0);
 		shmctl(c->x.shm.id, IPC_RMID, NULL);
 
-		xcb_shm_create_pixmap(conn, c->x.shm.pixmap, win, w, h,
-				depth, c->x.shm.seg, 0);
+		xcb_shm_create_pixmap(
+			conn, c->x.shm.pixmap, win, w, h,
+			__x_get_screen_depth(conn),
+			c->x.shm.seg, 0
+		);
 	} else {
-		c->shm = 0;
-
 		// FIXME: split source image into
 		//        multiple xcb_image_t objects
-		if (szpx > 16*1024*1024 /* 16mb */)
+		if (w*h*4 > 16*1024*1024 /* 16mb */)
 			die("image too big for one xcb_image_t");
 
-		c->vpx = xmalloc(szpx);
+		c->px_visual = xmalloc(w*h*4);
 
-		c->x.image = xcb_image_create_native(conn, w, h,
-				XCB_IMAGE_FORMAT_Z_PIXMAP, depth, c->vpx,
-				szpx, (uint8_t *)(c->vpx));
+		c->x.image = xcb_image_create_native(
+			conn, w, h, XCB_IMAGE_FORMAT_Z_PIXMAP,
+			__x_get_screen_depth(conn), c->px_visual,
+			w*h*4, (uint8_t *)(c->px_visual)
+		);
 	}
 
-	int i;
-	for (i = 0; i < c->width*c->height;++i)
-		c->px[i] = c->bg;
-
+	__canvas_fill(c, bg);
+	__canvas_take_snapshot(c);
 	__canvas_damage_full(c);
 
 	return c;
@@ -336,7 +335,7 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 
 	for (y = 0; y < c->height; ++y) {
 		for (x = 0; x < c->width; ++x) {
-			c->px[y*c->width+x] = 
+			c->px_raw[y*c->width+x] = 
 				(rows[y][x*4+3] << 24) |
 				(rows[y][x*4+0] << 16) |
 				(rows[y][x*4+1] <<  8) |
@@ -346,7 +345,7 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 	}
 
 	__canvas_damage_full(c);
-	__canvas_set_orig_px_to_current_state(c);
+	__canvas_take_snapshot(c);
 
 	png_free(png, rows);
 	png_read_end(png, NULL);
@@ -393,10 +392,10 @@ canvas_save(const Canvas *c, const char *path)
 
 	for (y = 0; y < c->height; ++y) {
 		for (x = 0; x < c->width; ++x) {
-			row[x*4+0] = (c->px[y*c->width+x] >> 16) & 0xff;
-			row[x*4+1] = (c->px[y*c->width+x] >>  8) & 0xff;
-			row[x*4+2] = (c->px[y*c->width+x] >>  0) & 0xff;
-			row[x*4+3] = (c->px[y*c->width+x] >> 24) & 0xff;
+			row[x*4+0] = (c->px_raw[y*c->width+x] >> 16) & 0xff;
+			row[x*4+1] = (c->px_raw[y*c->width+x] >>  8) & 0xff;
+			row[x*4+2] = (c->px_raw[y*c->width+x] >>  0) & 0xff;
+			row[x*4+3] = (c->px_raw[y*c->width+x] >> 24) & 0xff;
 		}
 		png_write_row(png, row);
 	}
@@ -407,25 +406,6 @@ canvas_save(const Canvas *c, const char *path)
 	png_destroy_info_struct(png, &pnginfo);
 	png_destroy_write_struct(&png, NULL);
 	fclose(fp);
-}
-
-extern void
-canvas_destroy(Canvas *c)
-{
-	xcb_free_gc(c->conn, c->gc);
-
-	if (c->shm) {
-		shmctl(c->x.shm.id, IPC_RMID, NULL);
-		xcb_shm_detach(c->conn, c->x.shm.seg);
-		shmdt(c->vpx);
-		xcb_free_pixmap(c->conn, c->x.shm.pixmap);
-	} else {
-		xcb_image_destroy(c->x.image);
-	}
-
-	free(c->px);
-	free(c->orig_px);
-	free(c);
 }
 
 extern void
@@ -491,17 +471,16 @@ canvas_set_pixel(Canvas *c, int x, int y, uint32_t color)
 		return;
 
 	__canvas_damage(c, x, y);
-	c->px[y*c->width+x] = color;
+	c->px_raw[y*c->width+x] = color;
 }
 
 extern int
 canvas_get_pixel(Canvas *c, int x, int y, uint32_t *color)
 {
-	if (x >= 0 && x < c->width && y >= 0 && y < c->height) {
-		*color = c->px[y*c->width+x];
-		return 1;
-	}
-	return 0;
+	if (x < 0 || x >= c->width || y < 0 || y >= c->height)
+		return 0;
+	*color = c->px_raw[y*c->width+x];
+	return 1;
 }
 
 extern void
@@ -512,23 +491,26 @@ canvas_viewport_to_canvas_pos(Canvas *c, int x, int y, int *out_x, int *out_y)
 }
 
 extern void
-canvas_canvas_to_viewport_pos(Canvas *c, int x, int y, int *out_x, int *out_y)
+canvas_clear(Canvas *c)
 {
-	*out_x = x + c->pos.x;
-	*out_y = y + c->pos.y;
+	__canvas_restore_snapshot(c);
 }
 
 extern void
-canvas_clear(Canvas *c)
+canvas_destroy(Canvas *c)
 {
-	int i;
-	size_t szpx;
-	szpx = sizeof(uint32_t) * c->width * c->height;
-	__canvas_damage_full(c);
-	if (c->orig_px) {
-		memcpy(c->px, c->orig_px, szpx);
+	xcb_free_gc(c->conn, c->gc);
+
+	if (c->shm) {
+		shmctl(c->x.shm.id, IPC_RMID, NULL);
+		xcb_shm_detach(c->conn, c->x.shm.seg);
+		shmdt(c->px_visual);
+		xcb_free_pixmap(c->conn, c->x.shm.pixmap);
 	} else {
-		for (i = 0; i < c->width*c->height;++i)
-			c->px[i] = c->bg;
+		xcb_image_destroy(c->x.image);
 	}
+
+	free(c->px_raw);
+	free(c->px_snapshot);
+	free(c);
 }
