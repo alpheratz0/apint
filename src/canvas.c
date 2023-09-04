@@ -298,6 +298,7 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 		break;
 	case PNG_COLOR_TYPE_GRAY_ALPHA:
 		png_set_gray_to_rgb(png);
+		break;
 	}
 
 	png_read_update_info(png, pnginfo);
