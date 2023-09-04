@@ -44,9 +44,6 @@
 #define HUE_RECT_X2 (HUE_RECT_X1 + HUE_RECT_WIDTH)
 #define HUE_RECT_Y2 (HUE_RECT_Y1 + HUE_RECT_HEIGHT)
 
-#define MIN(a,b) ((a)<(b)?(a):(b))
-#define MAX(a,b) ((a)>(b)?(a):(b))
-
 typedef struct Color Color;
 
 struct Color {

@@ -16,27 +16,28 @@
 
 */
 
-#pragma once
+#include <stdint.h>
+#include "color.h"
 
-#include <stddef.h>
+extern uint32_t
+color_mix(uint32_t c1, uint32_t c2, uint8_t alpha)
+{
+	uint8_t r, g, b, a;
+	uint8_t c1_r, c1_g, c1_b, c1_a;
+	uint8_t c2_r, c2_g, c2_b, c2_a;
+	uint32_t mixed;
 
-#define MIN(a,b) ((a)<(b)?(a):(b))
-#define MAX(a,b) ((a)>(b)?(a):(b))
+	c1_r = RED(c1);   c2_r = RED(c2);
+	c1_g = GREEN(c1); c2_g = GREEN(c2);
+	c1_b = BLUE(c1);  c2_b = BLUE(c2);
+	c1_a = ALPHA(c1); c2_a = ALPHA(c2);
 
-extern void
-die(const char *fmt, ...);
+	r = ALPHA_BLEND(c1_r, c2_r, alpha);
+	g = ALPHA_BLEND(c1_g, c2_g, alpha);
+	b = ALPHA_BLEND(c1_b, c2_b, alpha);
+	a = ALPHA_BLEND(c1_a, c2_a, alpha);
 
-extern void
-warn(const char *fmt, ...);
+	mixed = COLOR(r, g, b, a);
 
-extern const char *
-enotnull(const char *str, const char *name);
-
-extern void *
-xmalloc(size_t size);
-
-extern void *
-xcalloc(size_t nmemb, size_t size);
-
-extern char *
-xstrdup(const char *str);
+	return mixed;
+}

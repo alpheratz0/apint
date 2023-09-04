@@ -18,25 +18,18 @@
 
 #pragma once
 
-#include <stddef.h>
+#include <stdint.h>
 
-#define MIN(a,b) ((a)<(b)?(a):(b))
-#define MAX(a,b) ((a)>(b)?(a):(b))
+#define RED(c) ((c>>16) & 0xff)
+#define GREEN(c) ((c>>8) & 0xff)
+#define BLUE(c) ((c>>0) & 0xff)
+#define ALPHA(c) ((c>>24) & 0xff)
 
-extern void
-die(const char *fmt, ...);
+#define COLOR(r,g,b,a) \
+	((a<<24) | (r<<16) | (g<<8) | (b))
 
-extern void
-warn(const char *fmt, ...);
+#define ALPHA_BLEND(a, b, alpha) \
+	(a + ((b - a) * alpha) / 255)
 
-extern const char *
-enotnull(const char *str, const char *name);
-
-extern void *
-xmalloc(size_t size);
-
-extern void *
-xcalloc(size_t nmemb, size_t size);
-
-extern char *
-xstrdup(const char *str);
+extern uint32_t
+color_mix(uint32_t c1, uint32_t c2, uint8_t alpha);

@@ -39,6 +39,7 @@
 #include <stdbool.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
+#include "color.h"
 #include "notify.h"
 #include "utils.h"
 #include "canvas.h"
@@ -201,27 +202,6 @@ xwindestroy(void)
 	xcb_disconnect(conn);
 }
 
-#ifndef APINT_USE_ROUGH_BRUSH
-static inline uint8_t
-blerp(uint8_t from, uint8_t to, double v)
-{
-	return from + ((to - from) * v);
-}
-
-static uint32_t
-color_lerp(uint32_t from, uint32_t to, double v)
-{
-	uint8_t r, g, b;
-
-	v = v > 1 ? 1 : v < 0 ? 0 : v;
-	r = blerp((from >> 16) & 0xff, (to >> 16) & 0xff, v);
-	g = blerp((from >> 8) & 0xff, (to >> 8) & 0xff, v);
-	b = blerp(from & 0xff, to & 0xff, v);
-
-	return (r << 16) | (g << 8) | b;
-}
-#endif
-
 static void
 addpoint(int x, int y, uint32_t color, int size, bool add_to_history)
 {
@@ -229,14 +209,11 @@ addpoint(int x, int y, uint32_t color, int size, bool add_to_history)
 	uint32_t prevcol;
 
 #ifdef APINT_HISTORY
-	int canvasx, canvasy;
-
 	if (add_to_history) {
 		if (NULL == hist_last_action)
 			hist_last_action = history_user_action_new();
-		canvas_viewport_to_canvas_pos(canvas, x, y, &canvasx, &canvasy);
 		history_user_action_push_atomic(hist_last_action,
-				history_atomic_action_new(canvasx, canvasy,
+				history_atomic_action_new(x, y,
 					color, size));
 	}
 #else
@@ -252,8 +229,8 @@ addpoint(int x, int y, uint32_t color, int size, bool add_to_history)
 			canvas_set_pixel(canvas, x + dx, y + dy, color);
 #else
 			canvas_set_pixel(canvas, x + dx, y + dy,
-					color_lerp(color, prevcol,
-						sqrt(dy * dy + dx * dx) / size));
+					color_mix(color, prevcol,
+						((sqrt(dy * dy + dx * dx)*0xff) / size)));
 #endif
 		}
 	}
@@ -263,16 +240,12 @@ addpoint(int x, int y, uint32_t color, int size, bool add_to_history)
 static void
 regenfromhist(void)
 {
-	int x, y;
 	HistoryUserAction *hua;
 	HistoryAtomicAction *haa;
 
-	for (hua = hist->root; hua != hist->current->next; hua = hua->next) {
-		for (haa = hua->aa; haa; haa = haa->next) {
-			canvas_canvas_to_viewport_pos(canvas, haa->x, haa->y, &x, &y);
-			addpoint(x, y, haa->color, haa->size, false);
-		}
-	}
+	for (hua = hist->root; hua != hist->current->next; hua = hua->next)
+		for (haa = hua->aa; haa; haa = haa->next)
+			addpoint(haa->x, haa->y, haa->color, haa->size, false);
 }
 
 static void
@@ -414,13 +387,15 @@ h_key_press(xcb_key_press_event_t *ev)
 static void
 h_button_press(xcb_button_press_event_t *ev)
 {
+	int x, y;
 	switch (ev->detail) {
 	case XCB_BUTTON_INDEX_1:
 		if (draginfo.active)
 			break;
 		picker_hide(picker);
 		drawinfo.active = true;
-		addpoint(ev->event_x, ev->event_y, drawinfo.color, drawinfo.brush_size, true);
+		canvas_viewport_to_canvas_pos(canvas, ev->event_x, ev->event_y, &x, &y);
+		addpoint(x, y, drawinfo.color, drawinfo.brush_size, true);
 		canvas_render(canvas);
 		break;
 	case XCB_BUTTON_INDEX_2:
@@ -450,6 +425,7 @@ h_button_press(xcb_button_press_event_t *ev)
 static void
 h_motion_notify(xcb_motion_notify_event_t *ev)
 {
+	int x, y;
 	int dx, dy;
 
 	if (draginfo.active) {
@@ -464,7 +440,8 @@ h_motion_notify(xcb_motion_notify_event_t *ev)
 	}
 
 	if (drawinfo.active) {
-		addpoint(ev->event_x, ev->event_y, drawinfo.color, drawinfo.brush_size, true);
+		canvas_viewport_to_canvas_pos(canvas, ev->event_x, ev->event_y, &x, &y);
+		addpoint(x, y, drawinfo.color, drawinfo.brush_size, true);
 		canvas_render(canvas);
 	}
 }
@@ -507,7 +484,7 @@ static void
 h_picker_color_change(Picker *picker, uint32_t color)
 {
 	(void) picker;
-	drawinfo.color = 0xff000000 | color;
+	drawinfo.color = color;
 }
 
 static void
