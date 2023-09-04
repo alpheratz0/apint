@@ -18,16 +18,11 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #define MAX(a,b) ((a)>(b)?(a):(b))
-
-extern void
-die(const char *fmt, ...);
-
-extern void
-warn(const char *fmt, ...);
 
 extern const char *
 enotnull(const char *str, const char *name);
@@ -40,3 +35,12 @@ xcalloc(size_t nmemb, size_t size);
 
 extern char *
 xstrdup(const char *str);
+
+extern char *
+xprompt(const char *prompt);
+
+extern bool
+path_is_writeable(const char *path);
+
+extern char *
+path_expand(const char *path);

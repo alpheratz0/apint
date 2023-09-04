@@ -40,12 +40,11 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 #include "color.h"
-#include "notify.h"
+#include "log.h"
 #include "utils.h"
 #include "canvas.h"
 #include "picker.h"
 #include "history.h"
-#include "prompt.h"
 
 typedef struct {
 	bool active;
@@ -269,59 +268,21 @@ redo(void)
 }
 #endif
 
-static bool
-can_write_to(const char *path)
-{
-	FILE *fp;
-
-	if (NULL == (fp = fopen(path, "w")))
-		return false;
-	fclose(fp);
-	return true;
-}
-
-static char *
-expand_path(const char *path)
-{
-	char *home, *expanded;
-
-	if (!path)
-		return NULL;
-
-	if (path[0] != '~')
-		return xstrdup(path);
-
-	home = getenv("HOME");
-
-	if (home == NULL)
-		return xstrdup(path);
-
-	expanded = xmalloc(strlen(home) + strlen(path));
-	sprintf(expanded, "%s%s", home, path+1);
-
-	return expanded;
-}
-
 static void
 save(void)
 {
 	char *path, *expanded_path;
-	char err_msg[256], suc_msg[256];
 
-	path = prompt_read("save as...");
-
-	if (!path)
+	if (NULL == (path = xprompt("save as...")))
 		return;
 
-	expanded_path = expand_path(path);
+	expanded_path = path_expand(path);
 
-	if (can_write_to(expanded_path)) {
+	if (path_is_writeable(expanded_path)) {
 		canvas_save(canvas, expanded_path);
-		snprintf(suc_msg, sizeof(suc_msg), "saved drawing succesfully to %s", path);
-		notify_send("apint", suc_msg);
+		info("saved drawing succesfully to %s", path);
 	} else {
-		snprintf(err_msg, sizeof(err_msg), "can't save to %s", path);
-		notify_send("apint", err_msg);
+		info("can't save to %s", path);
 	}
 
 	free(path);

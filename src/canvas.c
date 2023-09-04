@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include "log.h"
 #include "color.h"
 #include "canvas.h"
 #include "utils.h"

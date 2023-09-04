@@ -24,6 +24,7 @@
 #include <xcb/xproto.h>
 #include <xcb/xcb_image.h>
 
+#include "log.h"
 #include "color.h"
 #include "picker.h"
 #include "utils.h"

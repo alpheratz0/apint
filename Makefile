@@ -10,8 +10,7 @@ OBJ=\
 	src/picker.o \
 	src/utils.o \
 	src/history.o \
-	src/prompt.o \
-	src/notify.o
+	src/log.o
 
 all: apint
 

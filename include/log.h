@@ -18,5 +18,8 @@
 
 #pragma once
 
-extern char *
-prompt_read(const char *prompt);
+extern void
+info(const char *fmt, ...);
+
+extern void
+die(const char *fmt, ...);
