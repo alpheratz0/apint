@@ -6,6 +6,7 @@ include config.mk
 OBJ=\
 	src/apint.o \
 	src/canvas.o \
+	src/color.o \
 	src/picker.o \
 	src/utils.o \
 	src/history.o \
