@@ -513,13 +513,29 @@ parse_size(const char *str, int *width, int *height)
 	*height = atoi(end+1);
 }
 
+static void
+parse_color(const char *str, uint32_t *color)
+{
+	uint32_t tmp_col;
+	char *end = NULL;
+	if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+		tmp_col = strtol(str+2, &end, 16);
+	} else if (str[0] == '#') {
+		tmp_col = strtol(str+1, &end, 16);
+	}
+	if (*end == '\0')
+		*color = tmp_col;
+}
+
 int
 main(int argc, char **argv)
 {
 	const char *loadpath;
 	xcb_generic_event_t *ev;
+	uint32_t bg;
 	int width, height;
 
+	bg = 0xffffffff;
 	width = 640, height = 480;
 	loadpath = NULL;
 
@@ -531,6 +547,7 @@ main(int argc, char **argv)
 			case 'f': start_in_fullscreen = true; break;
 			case 'l': --argc; loadpath = enotnull(*++argv, "path"); break;
 			case 's': --argc; parse_size(enotnull(*++argv, "size"), &width, &height); break;
+			case 'b': --argc; parse_color(enotnull(*++argv, "bg_color"), &bg); break;
 			default: die("invalid option %s", *argv); break;
 			}
 		} else {
@@ -553,7 +570,7 @@ main(int argc, char **argv)
 	drawinfo.brush_size = 5;
 
 	if (NULL == loadpath) {
-		canvas = canvas_new(conn, win, width, height);
+		canvas = canvas_new(conn, win, width, height, bg);
 	} else {
 		canvas = canvas_load(conn, win, loadpath);
 	}

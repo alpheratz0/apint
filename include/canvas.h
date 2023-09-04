@@ -24,7 +24,7 @@
 typedef struct Canvas Canvas;
 
 extern Canvas *
-canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h);
+canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h, uint32_t bg);
 
 extern Canvas *
 canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path);

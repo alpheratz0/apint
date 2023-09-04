@@ -47,6 +47,7 @@ struct Canvas {
 	uint32_t *px;
 	uint32_t *vpx;
 	uint32_t *orig_px;
+	uint32_t bg;
 
 	/* damage */
 	int damaged_x1, damaged_y1;
@@ -190,7 +191,7 @@ __canvas_set_orig_px_to_current_state(Canvas *c)
 }
 
 extern Canvas *
-canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h)
+canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h, uint32_t bg)
 {
 	Canvas *c;
 	size_t szpx;
@@ -218,6 +219,7 @@ canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h)
 	c->viewport_height = 0;
 	c->damaged_x1 = c->damaged_y1 = -1;
 	c->damaged_x2 = c->damaged_y2 = -1;
+	c->bg = bg;
 
 	c->gc = xcb_generate_id(conn);
 	xcb_create_gc(conn, c->gc, win, 0, NULL);
@@ -259,8 +261,11 @@ canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h)
 				szpx, (uint8_t *)(c->vpx));
 	}
 
-	memset(c->px, 255, szpx);
-	memset(c->vpx, 255, szpx);
+	int i;
+	for (i = 0; i < c->width*c->height;++i)
+		c->px[i] = c->bg;
+
+	__canvas_damage_full(c);
 
 	return c;
 }
@@ -291,7 +296,7 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 	png_init_io(png, fp);
 	png_read_info(png, pnginfo);
 	c = canvas_new(conn, win, png_get_image_width(png, pnginfo),
-			png_get_image_height(png, pnginfo));
+			png_get_image_height(png, pnginfo), 0);
 
 	bit_depth = png_get_bit_depth(png, pnginfo);
 	png_set_interlace_handling(png);
@@ -516,12 +521,14 @@ canvas_canvas_to_viewport_pos(Canvas *c, int x, int y, int *out_x, int *out_y)
 extern void
 canvas_clear(Canvas *c)
 {
+	int i;
 	size_t szpx;
 	szpx = sizeof(uint32_t) * c->width * c->height;
 	__canvas_damage_full(c);
 	if (c->orig_px) {
 		memcpy(c->px, c->orig_px, szpx);
 	} else {
-		memset(c->px, 255, szpx);
+		for (i = 0; i < c->width*c->height;++i)
+			c->px[i] = c->bg;
 	}
 }
