@@ -162,7 +162,7 @@ __color_make_rgb(float r, float g, float b)
 static uint32_t
 __color_to_uint32(const Color color)
 {
-	return  (0xff < 24) |
+	return  (0xff << 24) |
 			(((int)(color.r) << 16) |
 			((int)(color.g) <<  8) |
 			((int)(color.b) <<  0));
