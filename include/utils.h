@@ -47,3 +47,6 @@ path_expand(const char *path);
 
 extern void
 size_parse(const char *str, int *width, int *height);
+
+extern int
+clamp(int n, int min, int max);

@@ -34,6 +34,7 @@
 #include "utils.h"
 
 #define SHMAT_INVALID_MEM ((void *)(-1))
+#define XIMAGE_MAX_SIZE (16*1024*1024)
 
 struct Canvas {
 	xcb_connection_t *conn;
@@ -58,46 +59,27 @@ struct Canvas {
 	} x;
 };
 
+/**
+ * Check if the mit shm extension is supported.
+ * We want to use this extension because transfering
+ * the image data through unix sockets is much slower
+ * than directly passing it through shared memory.
+*/
 static int
 __x_check_mit_shm_extension(xcb_connection_t *conn)
 {
 	xcb_generic_error_t *error;
 	xcb_shm_query_version_cookie_t cookie;
 	xcb_shm_query_version_reply_t *reply;
+	int supported;
 
 	cookie = xcb_shm_query_version(conn);
 	reply = xcb_shm_query_version_reply(conn, cookie, &error);
+	supported = !error && reply && reply->shared_pixmaps;
 
-	if (NULL != error) {
-		if (NULL != reply)
-			free(reply);
-		free(error);
-		return 0;
-	}
+	free(error); free(reply);
 
-	if (NULL != reply) {
-		if (reply->shared_pixmaps == 0) {
-			free(reply);
-			return 0;
-		}
-		free(reply);
-		return 1;
-	}
-
-	return 0;
-}
-
-static uint8_t
-__x_get_screen_depth(xcb_connection_t *conn)
-{
-	xcb_screen_t *screen;
-
-	screen = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
-
-	if (NULL == screen)
-		die("can't get default screen");
-
-	return screen->root_depth;
+	return supported;
 }
 
 static int
@@ -110,12 +92,13 @@ __canvas_is_damaged(Canvas *c)
 	return 1;
 }
 
+/**
+ * A damaged pixel needs to recalculate its visual
+ * appareance before rendering the canvas.
+*/
 static void
 __canvas_damage(Canvas *c, int x, int y)
 {
-	if (x < 0 || x >= c->width || y < 0 || y >= c->height)
-		return;
-
 	if (!__canvas_is_damaged(c)) {
 		c->damage[0].x = c->damage[1].x = x;
 		c->damage[0].y = c->damage[1].y = y;
@@ -124,22 +107,15 @@ __canvas_damage(Canvas *c, int x, int y)
 
 	c->damage[0].x = MIN(c->damage[0].x, x);
 	c->damage[0].y = MIN(c->damage[0].y, y);
-
 	c->damage[1].x = MAX(c->damage[1].x, x);
 	c->damage[1].y = MAX(c->damage[1].y, y);
 }
 
 static void
-__canvas_damage_area(Canvas *c, int x, int y, int w, int h)
-{
-	__canvas_damage(c, x, y);
-	__canvas_damage(c, x+w-1, y+h-1);
-}
-
-static void
 __canvas_damage_full(Canvas *c)
 {
-	__canvas_damage_area(c, 0, 0, c->width, c->height);
+	__canvas_damage(c, 0, 0);
+	__canvas_damage(c, c->width-1, c->height-1);
 }
 
 static void
@@ -168,23 +144,18 @@ __canvas_damage_process(Canvas *c)
 static void
 __canvas_keep_visible(Canvas *c)
 {
-	if (c->pos.x < -c->width)
-		c->pos.x = -c->width;
-	if (c->pos.y < -c->height)
-		c->pos.y = -c->height;
-	if (c->pos.x > c->viewport_width)
-		c->pos.x = c->viewport_width;
-	if (c->pos.y > c->viewport_height)
-		c->pos.y = c->viewport_height;
+	c->pos.x = clamp(c->pos.x, -c->width, c->viewport_width);
+	c->pos.y = clamp(c->pos.y, -c->height, c->viewport_height);
 }
 
 static void
 __canvas_fill(Canvas *c, uint32_t color)
 {
-	int idx;
+	int x, y;
 
-	for (idx = 0; idx < c->width * c->height; ++idx)
-		c->px_raw[idx] = color;
+	for (y = 0; y < c->height; ++y)
+		for (x = 0; x < c->width; ++x)
+			c->px_raw[y*c->width+x] = color;
 
 	__canvas_damage_full(c);
 }
@@ -200,28 +171,34 @@ __canvas_take_snapshot(Canvas *c)
 static void
 __canvas_restore_snapshot(Canvas *c)
 {
-	if (NULL == c->px_snapshot)
-		return;
-	memcpy(c->px_raw, c->px_snapshot, 4*c->width*c->height);
-	__canvas_damage_full(c);
+	if (NULL != c->px_snapshot) {
+		memcpy(c->px_raw, c->px_snapshot, 4*c->width*c->height);
+		__canvas_damage_full(c);
+	}
 }
 
 extern Canvas *
 canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h, uint32_t bg)
 {
+	xcb_screen_t *screen;
 	Canvas *c;
 
 	c = xcalloc(1, sizeof(Canvas));
 
 	c->conn = conn;
 	c->win = win;
-	c->width = w;
-	c->height = h;
+	c->viewport_width = c->width = w;
+	c->viewport_height = c->height = h;
 	c->px_raw = xmalloc(w*h*4);
 	c->damage[0].x = c->damage[0].y = -1;
 	c->damage[1].x = c->damage[1].y = -1;
 	c->gc = xcb_generate_id(conn);
 	c->shm = __x_check_mit_shm_extension(conn);
+
+	screen = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
+
+	if (NULL == screen)
+		die("can't get default screen");
 
 	xcb_create_gc(conn, c->gc, win, 0, NULL);
 
@@ -245,20 +222,18 @@ canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h, uint32_t bg)
 
 		xcb_shm_create_pixmap(
 			conn, c->x.shm.pixmap, win, w, h,
-			__x_get_screen_depth(conn),
+			screen->root_depth,
 			c->x.shm.seg, 0
 		);
 	} else {
-		// FIXME: split source image into
-		//        multiple xcb_image_t objects
-		if (w*h*4 > 16*1024*1024 /* 16mb */)
-			die("image too big for one xcb_image_t");
+		if (w*h*4 > XIMAGE_MAX_SIZE)
+			die("xcb_image_t can't handle images larger than 16MB");
 
 		c->px_visual = xmalloc(w*h*4);
 
 		c->x.image = xcb_image_create_native(
 			conn, w, h, XCB_IMAGE_FORMAT_Z_PIXMAP,
-			__x_get_screen_depth(conn), c->px_visual,
+			screen->root_depth, c->px_visual,
 			w*h*4, (uint8_t *)(c->px_visual)
 		);
 	}
@@ -340,8 +315,8 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 		png_free(png, rows[y]);
 	}
 
-	__canvas_damage_full(c);
 	__canvas_take_snapshot(c);
+	__canvas_damage_full(c);
 
 	png_free(png, rows);
 	png_read_end(png, NULL);
@@ -412,13 +387,9 @@ canvas_move_relative(Canvas *c, int offx, int offy)
 extern void
 canvas_set_viewport(Canvas *c, int vw, int vh)
 {
-	if (c->viewport_width == 0 || c->viewport_height == 0) {
-		c->pos.x = (vw - c->width) / 2;
-		c->pos.y = (vh - c->height) / 2;
-	} else {
-		c->pos.x += (vw - c->viewport_width) / 2;
-		c->pos.y += (vh - c->viewport_height) / 2;
-	}
+	/* keep distance ratio from top/left/right/bottom */
+	c->pos.x += (vw - c->viewport_width) / 2;
+	c->pos.y += (vh - c->viewport_height) / 2;
 
 	c->viewport_width = vw;
 	c->viewport_height = vh;
@@ -459,20 +430,20 @@ canvas_render(Canvas *c)
 extern void
 canvas_set_pixel(Canvas *c, int x, int y, uint32_t color)
 {
-	if (x < 0 || x >= c->width || y < 0 || y >= c->height)
-		return;
-
-	__canvas_damage(c, x, y);
-	c->px_raw[y*c->width+x] = color;
+	if (x >= 0 && x < c->width && y >= 0 && y < c->height) {
+		c->px_raw[y*c->width+x] = color;
+		__canvas_damage(c, x, y);
+	}
 }
 
 extern int
 canvas_get_pixel(Canvas *c, int x, int y, uint32_t *color)
 {
-	if (x < 0 || x >= c->width || y < 0 || y >= c->height)
-		return 0;
-	*color = c->px_raw[y*c->width+x];
-	return 1;
+	if (x >= 0 && x < c->width && y >= 0 && y < c->height) {
+		*color = c->px_raw[y*c->width+x];
+		return 1;
+	}
+	return 0;
 }
 
 extern void
