@@ -171,3 +171,15 @@ path_expand(const char *path)
 
 	return res;
 }
+
+extern void
+size_parse(const char *str, int *width, int *height)
+{
+	char *end = NULL;
+	*width = strtol(str, &end, 10);
+	if (!end || *end != 'x' || end == str) {
+		*width = *height = 0;
+		return;
+	}
+	*height = atoi(end+1);
+}

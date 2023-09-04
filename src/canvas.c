@@ -231,13 +231,13 @@ canvas_new(xcb_connection_t *conn, xcb_window_t win, int w, int h, uint32_t bg)
 		c->x.shm.id     = shmget(IPC_PRIVATE, w*h*4, IPC_CREAT|0600);
 
 		if (c->x.shm.id < 0)
-			die("shmget failed: %s", strerror(errno));
+			die("shmget:");
 
 		c->px_visual = shmat(c->x.shm.id, NULL, 0);
 
 		if (SHMAT_INVALID_MEM == c->px_visual) {
 			shmctl(c->x.shm.id, IPC_RMID, NULL);
-			die("shmat failed: %s", strerror(errno));
+			die("shmat:");
 		}
 
 		xcb_shm_attach(conn, c->x.shm.seg, c->x.shm.id, 0);
@@ -281,7 +281,7 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 	int16_t x, y;
 
 	if (NULL == (fp = fopen(path, "rb")))
-		die("failed to open file %s: %s", path, strerror(errno));
+		die("failed to open file %s:", path);
 
 	if (NULL == (png = png_create_read_struct(PNG_LIBPNG_VER_STRING,
 					NULL, NULL, NULL)))
@@ -335,13 +335,8 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path)
 	png_read_image(png, rows);
 
 	for (y = 0; y < c->height; ++y) {
-		for (x = 0; x < c->width; ++x) {
-			c->px_raw[y*c->width+x] = 
-				(rows[y][x*4+3] << 24) |
-				(rows[y][x*4+0] << 16) |
-				(rows[y][x*4+1] <<  8) |
-				(rows[y][x*4+2] <<  0);
-		}
+		for (x = 0; x < c->width; ++x)
+			c->px_raw[y*c->width+x] = color_pack_from_arr(&rows[y][x*4]);
 		png_free(png, rows[y]);
 	}
 
@@ -368,7 +363,7 @@ canvas_save(const Canvas *c, const char *path)
 	png_byte *row;
 
 	if (NULL == (fp = fopen(path, "wb")))
-		die("fopen failed: %s", strerror(errno));
+		die("failed to open file %s:", path);
 
 	if (NULL == (png = png_create_write_struct(PNG_LIBPNG_VER_STRING,
 					NULL, NULL, NULL)))
@@ -392,12 +387,8 @@ canvas_save(const Canvas *c, const char *path)
 	row = png_malloc(png, c->width * 4);
 
 	for (y = 0; y < c->height; ++y) {
-		for (x = 0; x < c->width; ++x) {
-			row[x*4+0] = (c->px_raw[y*c->width+x] >> 16) & 0xff;
-			row[x*4+1] = (c->px_raw[y*c->width+x] >>  8) & 0xff;
-			row[x*4+2] = (c->px_raw[y*c->width+x] >>  0) & 0xff;
-			row[x*4+3] = (c->px_raw[y*c->width+x] >> 24) & 0xff;
-		}
+		for (x = 0; x < c->width; ++x)
+			color_unpack_to_arr(c->px_raw[y*c->width+x], &row[x*4]);
 		png_write_row(png, row);
 	}
 
@@ -498,7 +489,7 @@ canvas_clear(Canvas *c)
 }
 
 extern void
-canvas_destroy(Canvas *c)
+canvas_free(Canvas *c)
 {
 	xcb_free_gc(c->conn, c->gc);
 

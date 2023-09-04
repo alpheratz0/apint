@@ -44,3 +44,6 @@ path_is_writeable(const char *path);
 
 extern char *
 path_expand(const char *path);
+
+extern void
+size_parse(const char *str, int *width, int *height);

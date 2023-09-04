@@ -46,4 +46,4 @@ extern void
 picker_set(Picker *picker, uint32_t color);
 
 extern void
-picker_destroy(Picker *picker);
+picker_free(Picker *picker);

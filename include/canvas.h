@@ -55,4 +55,4 @@ extern void
 canvas_clear(Canvas *c);
 
 extern void
-canvas_destroy(Canvas *c);
+canvas_free(Canvas *c);

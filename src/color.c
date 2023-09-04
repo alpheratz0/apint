@@ -16,28 +16,85 @@
 
 */
 
+#include <stdlib.h>
 #include <stdint.h>
 #include "color.h"
+
+static inline uint8_t
+__alpha_blend(uint8_t a, uint8_t b, uint8_t alpha)
+{
+	return (a + ((b - a) * alpha) / 255);
+}
+
+static inline uint32_t
+__color_pack(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+{
+	return (uint32_t)(
+		(a<<24)|
+		(r<<16)|
+		(g<<8)|
+		(b<<0)
+	);
+}
+
+extern uint32_t
+color_pack_from_arr(uint8_t *p)
+{
+	return (uint32_t)(
+		(p[3]<<24)|
+		(p[0]<<16)|
+		(p[1]<<8)|
+		(p[2]<<0)
+	);
+}
+
+extern void
+color_unpack_to_arr(uint32_t c, uint8_t *p)
+{
+	p[0] = RED(c);
+	p[1] = GREEN(c);
+	p[2] = BLUE(c);
+	p[3] = ALPHA(c);
+}
+
+extern void
+color_parse(const char *str, uint32_t *c)
+{
+	uint32_t tmp_col;
+	char *end = NULL;
+
+	if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+		str += 2;
+	} else if (str[0] == '#') {
+		str += 1;
+	}
+
+	tmp_col = strtol(str, &end, 16);
+
+	if (*end != '\0')
+		return;
+
+	*c = tmp_col;
+
+	if (end - str <= 6)
+		*c |= 0xff << 24;
+}
 
 extern uint32_t
 color_mix(uint32_t c1, uint32_t c2, uint8_t alpha)
 {
-	uint8_t r, g, b, a;
-	uint8_t c1_r, c1_g, c1_b, c1_a;
-	uint8_t c2_r, c2_g, c2_b, c2_a;
 	uint32_t mixed;
+	uint8_t c1_u[4], c2_u[4];
 
-	c1_r = RED(c1);   c2_r = RED(c2);
-	c1_g = GREEN(c1); c2_g = GREEN(c2);
-	c1_b = BLUE(c1);  c2_b = BLUE(c2);
-	c1_a = ALPHA(c1); c2_a = ALPHA(c2);
+	color_unpack_to_arr(c1, c1_u);
+	color_unpack_to_arr(c2, c2_u);
 
-	r = ALPHA_BLEND(c1_r, c2_r, alpha);
-	g = ALPHA_BLEND(c1_g, c2_g, alpha);
-	b = ALPHA_BLEND(c1_b, c2_b, alpha);
-	a = ALPHA_BLEND(c1_a, c2_a, alpha);
-
-	mixed = COLOR(r, g, b, a);
+	mixed = __color_pack(
+		__alpha_blend(c1_u[0], c2_u[0], alpha),
+		__alpha_blend(c1_u[1], c2_u[1], alpha),
+		__alpha_blend(c1_u[2], c2_u[2], alpha),
+		__alpha_blend(c1_u[3], c2_u[3], alpha)
+	);
 
 	return mixed;
 }

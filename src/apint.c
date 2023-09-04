@@ -276,9 +276,9 @@ save(void)
 	if (NULL == (path = xprompt("save as...")))
 		return;
 
-	expanded_path = path_expand(path);
-
-	if (path_is_writeable(expanded_path)) {
+	if (NULL == (expanded_path = path_expand(path))) {
+		info("could not expand path");
+	} else if (path_is_writeable(expanded_path)) {
 		canvas_save(canvas, expanded_path);
 		info("saved drawing succesfully to %s", path);
 	} else {
@@ -445,13 +445,13 @@ static void
 h_picker_color_change(Picker *picker, uint32_t color)
 {
 	(void) picker;
-	drawinfo.color = (0xff<<24) | color;
+	drawinfo.color = color;
 }
 
 static void
 usage(void)
 {
-	puts("usage: apint [-fhv] [-l file] [-s size]");
+	puts("usage: apint [-fhv] [-l file] [-s size] [-b bg_color]");
 	exit(0);
 }
 
@@ -460,32 +460,6 @@ version(void)
 {
 	puts("apint version "VERSION);
 	exit(0);
-}
-
-static void
-parse_size(const char *str, int *width, int *height)
-{
-	char *end = NULL;
-	*width = strtol(str, &end, 10);
-	if (!end || *end != 'x' || end == str) {
-		*width = *height = 0;
-		return;
-	}
-	*height = atoi(end+1);
-}
-
-static void
-parse_color(const char *str, uint32_t *color)
-{
-	uint32_t tmp_col;
-	char *end = NULL;
-	if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
-		tmp_col = strtol(str+2, &end, 16);
-	} else if (str[0] == '#') {
-		tmp_col = strtol(str+1, &end, 16);
-	}
-	if (*end == '\0')
-		*color = tmp_col;
 }
 
 int
@@ -507,8 +481,8 @@ main(int argc, char **argv)
 			case 'v': version(); break;
 			case 'f': start_in_fullscreen = true; break;
 			case 'l': --argc; loadpath = enotnull(*++argv, "path"); break;
-			case 's': --argc; parse_size(enotnull(*++argv, "size"), &width, &height); break;
-			case 'b': --argc; parse_color(enotnull(*++argv, "bg_color"), &bg); break;
+			case 's': --argc; size_parse(enotnull(*++argv, "size"), &width, &height); break;
+			case 'b': --argc; color_parse(enotnull(*++argv, "bg_color"), &bg); break;
 			default: die("invalid option %s", *argv); break;
 			}
 		} else {
@@ -568,8 +542,8 @@ main(int argc, char **argv)
 	history_destroy(hist);
 #endif
 
-	canvas_destroy(canvas);
-	picker_destroy(picker);
+	canvas_free(canvas);
+	picker_free(picker);
 	xwindestroy();
 
 	return 0;

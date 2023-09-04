@@ -25,11 +25,14 @@
 #define BLUE(c) ((c>>0) & 0xff)
 #define ALPHA(c) ((c>>24) & 0xff)
 
-#define COLOR(r,g,b,a) \
-	((a<<24) | (r<<16) | (g<<8) | (b))
+extern uint32_t
+color_pack_from_arr(uint8_t *p);
 
-#define ALPHA_BLEND(a, b, alpha) \
-	(a + ((b - a) * alpha) / 255)
+extern void
+color_unpack_to_arr(uint32_t c, uint8_t *p);
+
+extern void
+color_parse(const char *str, uint32_t *c);
 
 extern uint32_t
 color_mix(uint32_t c1, uint32_t c2, uint8_t alpha);

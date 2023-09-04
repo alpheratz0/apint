@@ -162,7 +162,8 @@ __color_make_rgb(float r, float g, float b)
 static uint32_t
 __color_to_uint32(const Color color)
 {
-	return (((int)(color.r) << 16) |
+	return  (0xff < 24) |
+			(((int)(color.r) << 16) |
 			((int)(color.g) <<  8) |
 			((int)(color.b) <<  0));
 }
@@ -383,7 +384,7 @@ picker_set(Picker *picker, uint32_t color)
 }
 
 extern void
-picker_destroy(Picker *picker)
+picker_free(Picker *picker)
 {
 	xcb_free_gc(picker->conn, picker->gc);
 	xcb_image_destroy(picker->img);
