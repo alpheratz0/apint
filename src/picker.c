@@ -20,11 +20,11 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
-#include <assert.h>
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
 #include <xcb/xcb_image.h>
 
+#include "color.h"
 #include "picker.h"
 #include "utils.h"
 
@@ -166,41 +166,51 @@ __color_to_uint32(const Color color)
 			((int)(color.b) <<  0));
 }
 
+static uint8_t
+__x_get_screen_depth(xcb_connection_t *conn)
+{
+	xcb_screen_t *screen;
+	screen = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
+	if (NULL == screen)
+		die("can't get default screen");
+	return screen->root_depth;
+}
+
+static xcb_visualid_t
+__x_get_screen_visual(xcb_connection_t *conn)
+{
+	xcb_screen_t *screen;
+	screen = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
+	if (NULL == screen)
+		die("can't get default screen");
+	return screen->root_visual;
+}
+
 extern Picker *
 picker_new(xcb_connection_t *conn, xcb_window_t parent_win, PickerOnColorChangeHandler occ)
 {
 	int w, h;
 	Picker *picker;
-	size_t szpx;
-	xcb_screen_t *scr;
-	uint8_t depth;
 
 	w = HUE_RECT_X2 + PADDING;
 	h = HUE_RECT_Y2 + PADDING;
 
-	assert(conn != NULL);
-
-	scr = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
-	assert(scr != NULL);
-
-	szpx = w * h * sizeof(uint32_t);
 	picker = xcalloc(1, sizeof(Picker));
-	depth = scr->root_depth;
 
+	picker->conn = conn;
+	picker->win = xcb_generate_id(conn);
+	picker->gc = xcb_generate_id(conn);
 	picker->visible = false;
 	picker->selecting = false;
 	picker->width = w;
 	picker->height = h;
 	picker->occ = occ;
 
-	picker->conn = conn;
-	picker->gc = xcb_generate_id(conn);
-	picker->win = xcb_generate_id(conn);
-
 	xcb_create_window_aux(
-		conn, depth, picker->win, parent_win, 0, 0,
+		conn, __x_get_screen_depth(conn),
+		picker->win, parent_win, 0, 0,
 		w, h, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
-		scr->root_visual, XCB_CW_EVENT_MASK,
+		__x_get_screen_visual(conn), XCB_CW_EVENT_MASK,
 		(const xcb_create_window_value_list_t []) {{
 			.event_mask = XCB_EVENT_MASK_EXPOSURE |
 			              XCB_EVENT_MASK_BUTTON_PRESS |
@@ -212,10 +222,11 @@ picker_new(xcb_connection_t *conn, xcb_window_t parent_win, PickerOnColorChangeH
 	xcb_create_gc(conn, picker->gc, picker->win, 0, NULL);
 
 	picker->px = xcalloc(w * h, sizeof(uint32_t));
-
-	picker->img = xcb_image_create_native(conn, w, h,
-			XCB_IMAGE_FORMAT_Z_PIXMAP, depth, picker->px,
-			szpx, (uint8_t *)(picker->px));
+	picker->img = xcb_image_create_native(
+		conn, w, h, XCB_IMAGE_FORMAT_Z_PIXMAP,
+		__x_get_screen_depth(conn), picker->px, w*h*4,
+		(uint8_t *)(picker->px)
+	);
 
 	return picker;
 }
@@ -366,13 +377,7 @@ picker_hide(Picker *picker)
 extern void
 picker_set(Picker *picker, uint32_t color)
 {
-	float r, g, b;
-
-	r = (color >> 16) & 0xff;
-	g = (color >> 8) & 0xff;
-	b = (color >> 0) & 0xff;
-
-	picker->color = __color_make_rgb(r, g, b);
+	picker->color = __color_make_rgb(RED(color), GREEN(color), BLUE(color));
 	__picker_draw(picker);
 }
 
