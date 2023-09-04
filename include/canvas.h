@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <stdint.h>
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
 
@@ -31,9 +32,6 @@ canvas_load(xcb_connection_t *conn, xcb_window_t win, const char *path);
 
 extern void
 canvas_save(const Canvas *c, const char *path);
-
-extern void
-canvas_destroy(Canvas *c);
 
 extern void
 canvas_move_relative(Canvas *c, int offx, int offy);
@@ -54,7 +52,7 @@ extern void
 canvas_viewport_to_canvas_pos(Canvas *c, int x, int y, int *out_x, int *out_y);
 
 extern void
-canvas_canvas_to_viewport_pos(Canvas *c, int x, int y, int *out_x, int *out_y);
+canvas_clear(Canvas *c);
 
 extern void
-canvas_clear(Canvas *c);
+canvas_destroy(Canvas *c);
