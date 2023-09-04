@@ -30,8 +30,10 @@ create a canvas with the specified background color
 .El
 .Sh EXAMPLES
 .Bl -tag -width indent
-.It create a 640x480 canvas
+.It create a 640x480 white canvas
 apint -s 640x480
+.It create a 640x480 transparent canvas
+apint -s 640x480 -b 0x00000000
 .It draw over a freshly taken screenshot
 apint -f -l $(xscreenshot -p -d $(mktemp -d))
 .El
