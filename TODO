@@ -1,2 +1,0 @@
-[ ] picker: rework + clean up (move color related code to color.c)
-[ ] picker: create a slider to set alpha channel
