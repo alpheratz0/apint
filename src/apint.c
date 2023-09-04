@@ -484,7 +484,7 @@ static void
 h_picker_color_change(Picker *picker, uint32_t color)
 {
 	(void) picker;
-	drawinfo.color = color;
+	drawinfo.color = (0xff<<24) | color;
 }
 
 static void
