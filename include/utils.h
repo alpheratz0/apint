@@ -24,6 +24,9 @@
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #define MAX(a,b) ((a)>(b)?(a):(b))
 
+#define CLAMP(v,min,max) \
+	((v)>(max)?(max):(v)<(min)?(min):(v))
+
 extern const char *
 enotnull(const char *str, const char *name);
 
@@ -47,6 +50,3 @@ path_expand(const char *path);
 
 extern void
 size_parse(const char *str, int *width, int *height);
-
-extern int
-clamp(int n, int min, int max);

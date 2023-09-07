@@ -36,12 +36,17 @@
 #define SHMAT_INVALID_MEM ((void *)(-1))
 #define XIMAGE_MAX_SIZE (16*1024*1024)
 
+typedef struct {
+	float x;
+	float y;
+} vec2f_t;
+
 struct Canvas {
 	xcb_connection_t *conn;
 	xcb_window_t win;
 	xcb_gcontext_t gc;
 	xcb_point_t damage[2];
-	xcb_point_t pos;
+	vec2f_t pos;
 	int width, height;
 	int viewport_width;
 	int viewport_height;
@@ -144,8 +149,8 @@ __canvas_damage_process(Canvas *c)
 static void
 __canvas_keep_visible(Canvas *c)
 {
-	c->pos.x = clamp(c->pos.x, -c->width, c->viewport_width);
-	c->pos.y = clamp(c->pos.y, -c->height, c->viewport_height);
+	c->pos.x = CLAMP(c->pos.x, -c->width, c->viewport_width);
+	c->pos.y = CLAMP(c->pos.y, -c->height, c->viewport_height);
 }
 
 static void
@@ -389,8 +394,8 @@ extern void
 canvas_set_viewport(Canvas *c, int vw, int vh)
 {
 	/* keep distance ratio from top/left/right/bottom */
-	c->pos.x += (vw - c->viewport_width) / 2;
-	c->pos.y += (vh - c->viewport_height) / 2;
+	c->pos.x += ((float)vw - c->viewport_width) / 2;
+	c->pos.y += ((float)vh - c->viewport_height) / 2;
 
 	c->viewport_width = vw;
 	c->viewport_height = vh;

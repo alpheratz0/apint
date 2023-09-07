@@ -183,9 +183,3 @@ size_parse(const char *str, int *width, int *height)
 	}
 	*height = atoi(end+1);
 }
-
-extern int
-clamp(int n, int min, int max)
-{
-	return n > max ? max : n < min ? min : n;
-}
