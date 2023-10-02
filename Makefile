@@ -15,7 +15,7 @@ OBJ=\
 all: apint
 
 apint: $(OBJ)
-	$(CC) $(LDFLAGS) -o apint $(OBJ) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o apint $(OBJ)
 
 clean:
 	rm -f apint $(OBJ) apint-$(VERSION).tar.gz
