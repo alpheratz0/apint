@@ -56,6 +56,7 @@ typedef struct {
 	bool active;
 	uint32_t color;
 	int brush_size;
+	xcb_point_t mouse_pos;
 } DrawInfo;
 
 #ifndef APINT_NO_HISTORY
@@ -72,6 +73,7 @@ static Picker *picker;
 static xcb_connection_t *conn;
 static xcb_screen_t *scr;
 static xcb_window_t win;
+static xcb_gcontext_t brush_preview_gc;
 static xcb_key_symbols_t *ksyms;
 static xcb_cursor_context_t *cctx;
 static xcb_cursor_t cursor_hand;
@@ -138,6 +140,7 @@ xwininit(void)
 	cursor_crosshair = xcb_cursor_load_cursor(cctx, "crosshair");
 	ksyms = xcb_key_symbols_alloc(conn);
 	win = xcb_generate_id(conn);
+	brush_preview_gc = xcb_generate_id(conn);
 
 	xcb_create_window_aux(
 		conn, scr->root_depth, win, scr->root, 0, 0,
@@ -185,6 +188,7 @@ xwininit(void)
 			_NET_WM_STATE, XCB_ATOM_ATOM, 32, 1, &_NET_WM_STATE_FULLSCREEN);
 	}
 
+	xcb_create_gc(conn, brush_preview_gc, win, XCB_GC_FOREGROUND, (const uint32_t[]){0xcccccc});
 	xcb_change_window_attributes(conn, win, XCB_CW_CURSOR, &cursor_crosshair);
 	xcb_map_window(conn, win);
 	xcb_flush(conn);
@@ -193,12 +197,30 @@ xwininit(void)
 static void
 xwindestroy(void)
 {
+	xcb_free_gc(conn, brush_preview_gc);
 	xcb_free_cursor(conn, cursor_hand);
 	xcb_free_cursor(conn, cursor_crosshair);
 	xcb_key_symbols_free(ksyms);
 	xcb_destroy_window(conn, win);
 	xcb_cursor_context_free(cctx);
 	xcb_disconnect(conn);
+}
+
+static void
+brush_preview_render(void)
+{
+	canvas_render(canvas);
+
+	xcb_poly_arc(conn, win, brush_preview_gc, 1, (const xcb_arc_t []) {{
+		.x = drawinfo.mouse_pos.x - drawinfo.brush_size,
+		.y = drawinfo.mouse_pos.y - drawinfo.brush_size,
+		.width = drawinfo.brush_size*2,
+		.height = drawinfo.brush_size*2,
+		.angle1 = 0 << 6,
+		.angle2 = 360 << 6
+	}});
+
+	xcb_flush(conn);
 }
 
 static void
@@ -375,10 +397,12 @@ h_button_press(xcb_button_press_event_t *ev)
 	case XCB_BUTTON_INDEX_4:
 		if (drawinfo.brush_size < 30)
 			drawinfo.brush_size++;
+		brush_preview_render();
 		break;
 	case XCB_BUTTON_INDEX_5:
 		if (drawinfo.brush_size > 2)
 			drawinfo.brush_size--;
+		brush_preview_render();
 		break;
 	}
 }
@@ -388,6 +412,9 @@ h_motion_notify(xcb_motion_notify_event_t *ev)
 {
 	int x, y;
 	int dx, dy;
+
+	drawinfo.mouse_pos.x = ev->event_x;
+	drawinfo.mouse_pos.y = ev->event_y;
 
 	if (draginfo.active) {
 		dx = ev->event_x - draginfo.x;
