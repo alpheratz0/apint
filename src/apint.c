@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2022-2023 <alpheratz99@protonmail.com>
+	Copyright (C) 2022-2025 <alpheratz99@protonmail.com>
 
 	This program is free software; you can redistribute it and/or modify it
 	under the terms of the GNU General Public License version 2 as published by
@@ -59,6 +59,9 @@ typedef struct {
 	xcb_point_t mouse_pos;
 } DrawInfo;
 
+#define APINT_WM_NAME "apint"
+#define APINT_WM_CLASS "apint\0apint\0"
+
 #ifndef APINT_NO_HISTORY
 #define APINT_HISTORY 1
 #endif
@@ -107,9 +110,6 @@ get_x11_atom(const char *name)
 static void
 xwininit(void)
 {
-	const char *wm_class,
-		       *wm_name;
-
 	xcb_atom_t _NET_WM_NAME,
 			   _NET_WM_WINDOW_OPACITY;
 
@@ -159,14 +159,12 @@ xwininit(void)
 
 	_NET_WM_NAME = get_x11_atom("_NET_WM_NAME");
 	UTF8_STRING = get_x11_atom("UTF8_STRING");
-	wm_name = "apint";
 
-	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win,
-		_NET_WM_NAME, UTF8_STRING, 8, strlen(wm_name), wm_name);
+	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, _NET_WM_NAME,
+			UTF8_STRING, 8, sizeof(APINT_WM_NAME) - 1, APINT_WM_NAME);
 
-	wm_class = "apint\0apint\0";
 	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, XCB_ATOM_WM_CLASS,
-		XCB_ATOM_STRING, 8, strlen(wm_class), wm_class);
+		XCB_ATOM_STRING, 8, sizeof(APINT_WM_CLASS), APINT_WM_CLASS);
 
 	WM_PROTOCOLS = get_x11_atom("WM_PROTOCOLS");
 	WM_DELETE_WINDOW = get_x11_atom("WM_DELETE_WINDOW");
