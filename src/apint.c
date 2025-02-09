@@ -164,7 +164,7 @@ xwininit(void)
 			UTF8_STRING, 8, sizeof(APINT_WM_NAME) - 1, APINT_WM_NAME);
 
 	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, XCB_ATOM_WM_CLASS,
-		XCB_ATOM_STRING, 8, sizeof(APINT_WM_CLASS), APINT_WM_CLASS);
+		XCB_ATOM_STRING, 8, sizeof(APINT_WM_CLASS) - 1, APINT_WM_CLASS);
 
 	WM_PROTOCOLS = get_x11_atom("WM_PROTOCOLS");
 	WM_DELETE_WINDOW = get_x11_atom("WM_DELETE_WINDOW");
