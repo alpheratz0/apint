@@ -57,10 +57,14 @@ typedef struct {
 	uint32_t color;
 	int brush_size;
 	xcb_point_t mouse_pos;
+	int last_x;
+	int last_y;
+	bool has_prev;
 } DrawInfo;
 
 #define APINT_WM_NAME "apint"
 #define APINT_WM_CLASS "apint\0apint\0"
+#define APINT_STROKE_SPACING_FACTOR 0.55f
 
 #ifndef APINT_NO_HISTORY
 #define APINT_HISTORY 1
@@ -255,6 +259,31 @@ addpoint(int x, int y, uint32_t color, int size, bool add_to_history)
 	}
 }
 
+static void
+addsegment(int x0, int y0, int x1, int y1, uint32_t color,
+		int size, bool add_to_history)
+{
+	int dx = x1 - x0;
+	int dy = y1 - y0;
+	float dist = sqrtf((float)(dx*dx + dy*dy));
+	if (dist <= 0.0f) {
+		return;
+	}
+
+	float spacing = size * APINT_STROKE_SPACING_FACTOR;
+	if (spacing < 1.0f) spacing = 1.0f;
+
+	int steps = (int)ceilf(dist / spacing);
+	float stepx = dx / (float)steps;
+	float stepy = dy / (float)steps;
+
+	for (int i = 1; i <= steps; ++i) {
+		int xi = (int)lroundf(x0 + stepx * i);
+		int yi = (int)lroundf(y0 + stepy * i);
+		addpoint(xi, yi, color, size, add_to_history);
+	}
+}
+
 #ifdef APINT_HISTORY
 static void
 regenfromhist(void)
@@ -376,6 +405,9 @@ h_button_press(xcb_button_press_event_t *ev)
 		picker_hide(picker);
 		drawinfo.active = true;
 		canvas_viewport_to_canvas_pos(canvas, ev->event_x, ev->event_y, &x, &y);
+		drawinfo.last_x = x;
+		drawinfo.last_y = y;
+		drawinfo.has_prev = true;
 		addpoint(x, y, drawinfo.color, drawinfo.brush_size, true);
 		canvas_render(canvas);
 		break;
@@ -427,7 +459,15 @@ h_motion_notify(xcb_motion_notify_event_t *ev)
 
 	if (drawinfo.active) {
 		canvas_viewport_to_canvas_pos(canvas, ev->event_x, ev->event_y, &x, &y);
-		addpoint(x, y, drawinfo.color, drawinfo.brush_size, true);
+		if (drawinfo.has_prev) {
+			addsegment(drawinfo.last_x, drawinfo.last_y, x, y,
+					drawinfo.color, drawinfo.brush_size, true);
+		} else {
+			addpoint(ev->event_x, ev->event_y, drawinfo.color, drawinfo.brush_size, true);
+			drawinfo.has_prev = true;
+		}
+		drawinfo.last_x = x;
+		drawinfo.last_y = y;
 		canvas_render(canvas);
 	}
 }
@@ -438,6 +478,7 @@ h_button_release(xcb_button_release_event_t *ev)
 	switch (ev->detail) {
 	case XCB_BUTTON_INDEX_1:
 		drawinfo.active = false;
+		drawinfo.has_prev = false;
 #ifdef APINT_HISTORY
 		if (NULL == hist_last_action)
 			break;
@@ -528,6 +569,7 @@ main(int argc, char **argv)
 
 	drawinfo.color = 0xff000000;
 	drawinfo.brush_size = 5;
+	drawinfo.has_prev = false;
 
 	if (NULL == loadpath) {
 		canvas = canvas_new(conn, win, width, height, bg);
