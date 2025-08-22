@@ -65,6 +65,7 @@ typedef struct {
 #define APINT_WM_NAME "apint"
 #define APINT_WM_CLASS "apint\0apint\0"
 #define APINT_STROKE_SPACING_FACTOR 0.55f
+#define APINT_MAX_BRUSH_SIZE (100)
 
 #ifndef APINT_NO_HISTORY
 #define APINT_HISTORY 1
@@ -425,7 +426,7 @@ h_button_press(xcb_button_press_event_t *ev)
 		picker_show(picker, ev->event_x, ev->event_y);
 		break;
 	case XCB_BUTTON_INDEX_4:
-		if (drawinfo.brush_size < 30)
+		if (drawinfo.brush_size < APINT_MAX_BRUSH_SIZE)
 			drawinfo.brush_size++;
 		brush_preview_render();
 		break;
