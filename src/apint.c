@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2022-2025 <alpheratz99@protonmail.com>
+	Copyright (C) 2022-2026 <alpheratz99@protonmail.com>
 
 	This program is free software; you can redistribute it and/or modify it
 	under the terms of the GNU General Public License version 2 as published by
@@ -363,6 +363,7 @@ static void
 h_key_press(xcb_key_press_event_t *ev)
 {
 	xcb_keysym_t key;
+	int draw_position_x, draw_position_y;
 
 	key = xcb_key_symbols_get_keysym(ksyms, ev->detail, 0);
 
@@ -377,6 +378,10 @@ h_key_press(xcb_key_press_event_t *ev)
 #endif
 
 		case XKB_KEY_s: save(); return;
+		case XKB_KEY_g:
+			canvas_viewport_to_canvas_pos(canvas, drawinfo.mouse_pos.x, drawinfo.mouse_pos.y, &draw_position_x, &draw_position_y);
+			canvas_get_pixel(canvas, draw_position_x, draw_position_y, &drawinfo.color);
+			return;
 		}
 	}
 
