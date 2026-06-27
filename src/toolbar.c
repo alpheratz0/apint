@@ -287,19 +287,6 @@ __toolbar_draw_icon(Toolbar *tb, const Region *r)
 		__toolbar_fillrect(tb, ix + 4, iy + 2, s - 10, 4, col);
 		break;
 	case R_UNDO:
-		/* counter-clockwise three-quarter arrow (gap on the right),
-		 * arrowhead at the top end pointing up-left */
-		__toolbar_set_fg(tb, col, 1);
-		xcb_poly_arc(tb->conn, tb->win, tb->gc, 1, (const xcb_arc_t []){{
-			.x = cx - 6, .y = cy - 6, .width = 12, .height = 12,
-			.angle1 = 30 << 6, .angle2 = 270 << 6
-		}});
-		__toolbar_line(tb, cx + 5, cy - 3, cx + 9, cy - 4, col, 1);
-		__toolbar_line(tb, cx + 5, cy - 3, cx + 6, cy + 1, col, 1);
-		break;
-	case R_REDO:
-		/* mirror of undo: clockwise arrow with the gap on the left,
-		 * arrowhead at the top end pointing up-right */
 		__toolbar_set_fg(tb, col, 1);
 		xcb_poly_arc(tb->conn, tb->win, tb->gc, 1, (const xcb_arc_t []){{
 			.x = cx - 6, .y = cy - 6, .width = 12, .height = 12,
@@ -307,6 +294,15 @@ __toolbar_draw_icon(Toolbar *tb, const Region *r)
 		}});
 		__toolbar_line(tb, cx - 5, cy - 3, cx - 9, cy - 4, col, 1);
 		__toolbar_line(tb, cx - 5, cy - 3, cx - 6, cy + 1, col, 1);
+		break;
+	case R_REDO:
+		__toolbar_set_fg(tb, col, 1);
+		xcb_poly_arc(tb->conn, tb->win, tb->gc, 1, (const xcb_arc_t []){{
+			.x = cx - 6, .y = cy - 6, .width = 12, .height = 12,
+			.angle1 = 30 << 6, .angle2 = 270 << 6
+		}});
+		__toolbar_line(tb, cx + 5, cy - 3, cx + 9, cy - 4, col, 1);
+		__toolbar_line(tb, cx + 5, cy - 3, cx + 6, cy + 1, col, 1);
 		break;
 	case R_TOOL:
 		switch (r->data) {
