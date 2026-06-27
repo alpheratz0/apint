@@ -191,19 +191,6 @@ __toolbar_text(Toolbar *tb, int x, int y, const char *s)
 	xcb_image_text_8(tb->conn, strlen(s), tb->win, tb->fontgc, x, y, s);
 }
 
-static void
-__toolbar_vtext(Toolbar *tb, int cx, int cy, const char *s)
-{
-	int i, n, sy;
-	if (!tb->has_font)
-		return;
-	n = strlen(s);
-	sy = cy - (n * 9) / 2 + 8;
-	for (i = 0; i < n; ++i)
-		xcb_image_text_8(tb->conn, 1, tb->win, tb->fontgc,
-				cx - 3, sy + i * 9, &s[i]);
-}
-
 /* region table */
 static void
 __toolbar_add_region(Toolbar *tb, int x, int y, int w, int h, RKind kind, int data)
@@ -411,11 +398,6 @@ __toolbar_draw(Toolbar *tb)
 			break;
 		}
 	}
-
-	/* section labels */
-	__toolbar_vtext(tb, 6, tb->colors_y0 + ((PALETTE_LEN + 1 + 2) / 3) * PITCH / 2, "colors");
-	__toolbar_vtext(tb, 6, tb->thick_y0 + 23, "thickness");
-	__toolbar_vtext(tb, 6, tb->shapes_y0 + PITCH, "shapes");
 
 	xcb_flush(tb->conn);
 }
