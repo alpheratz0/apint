@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2023 <alpheratz99@protonmail.com>
+	Copyright (C) 2023-2026 <alpheratz99@protonmail.com>
 
 	This program is free software; you can redistribute it and/or modify it
 	under the terms of the GNU General Public License version 2 as published by
@@ -35,6 +35,9 @@ xmalloc(size_t size);
 
 extern void *
 xcalloc(size_t nmemb, size_t size);
+
+extern void *
+xrealloc(void *ptr, size_t size);
 
 extern char *
 xstrdup(const char *str);

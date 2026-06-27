@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2023 <alpheratz99@protonmail.com>
+	Copyright (C) 2023-2026 <alpheratz99@protonmail.com>
 
 	This program is free software; you can redistribute it and/or modify it
 	under the terms of the GNU General Public License version 2 as published by
@@ -19,33 +19,9 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+#include "log.h"
 #include "utils.h"
 #include "history.h"
-
-static void
-__history_atomic_action_destroy(HistoryAtomicAction *haa)
-{
-	free(haa);
-}
-
-static void
-__history_atomic_action_list_destroy(HistoryAtomicAction *list)
-{
-	HistoryAtomicAction *tmp;
-
-	while (NULL != list) {
-		tmp = list->next;
-		__history_atomic_action_destroy(list);
-		list = tmp;
-	}
-}
-
-static void
-__history_user_action_destroy(HistoryUserAction *hua)
-{
-	__history_atomic_action_list_destroy(hua->aa);
-	free(hua);
-}
 
 static void
 __history_user_action_list_destroy(HistoryUserAction *list)
@@ -54,7 +30,7 @@ __history_user_action_list_destroy(HistoryUserAction *list)
 
 	while (NULL != list) {
 		tmp = list->next;
-		__history_user_action_destroy(list);
+		history_user_action_destroy(list);
 		list = tmp;
 	}
 }
@@ -73,44 +49,27 @@ extern HistoryUserAction *
 history_user_action_new(void)
 {
 	HistoryUserAction *hua;
-	hua = xmalloc(sizeof(HistoryUserAction));
-	hua->next = NULL;
-	hua->prev = NULL;
-	hua->aa = NULL;
+	hua = xcalloc(1, sizeof(HistoryUserAction));
+	hua->type = HISTORY_STROKE;
 	return hua;
 }
 
-extern HistoryAtomicAction *
-history_atomic_action_new(int x, int y, uint32_t color, int size)
-{
-	HistoryAtomicAction *haa;
-	haa = xmalloc(sizeof(HistoryAtomicAction));
-	haa->x = x;
-	haa->y = y;
-	haa->color = color;
-	haa->size = size;
-	haa->next = NULL;
-	return haa;
-}
-
 extern void
-history_user_action_push_atomic(HistoryUserAction *hua,
-		HistoryAtomicAction *haa)
+history_user_action_push_point(HistoryUserAction *hua, int x, int y)
 {
-	HistoryAtomicAction *last;
+	if (hua->type != HISTORY_STROKE)
+		die("history_user_action_push_point: action is not a stroke");
 
-	// check if there is no atomic actions
-	// created yet
-	if (NULL == hua->aa) {
-		hua->aa = haa;
-		return;
+	if (hua->stroke.npoints >= hua->stroke.cap_points) {
+		hua->stroke.cap_points = hua->stroke.cap_points
+				? hua->stroke.cap_points * 2 : 32;
+		hua->stroke.points = xrealloc(hua->stroke.points,
+				hua->stroke.cap_points * sizeof(HistoryPoint));
 	}
 
-	// get last node
-	for (last = hua->aa; last->next; last = last->next)
-		;
-
-	last->next = haa;
+	hua->stroke.points[hua->stroke.npoints].x = x;
+	hua->stroke.points[hua->stroke.npoints].y = y;
+	hua->stroke.npoints++;
 }
 
 extern void
@@ -122,6 +81,7 @@ history_do(History *hist, HistoryUserAction *hua)
 	// link
 	hist->current->next = hua;
 	hua->prev = hist->current;
+	hua->next = NULL;
 
 	// update position in history
 	hist->current = hua;
@@ -143,6 +103,15 @@ history_redo(History *hist)
 		return false;
 	hist->current = hist->current->next;
 	return true;
+}
+
+extern void
+history_user_action_destroy(HistoryUserAction *hua)
+{
+	/* only the stroke variant owns heap memory */
+	if (hua->type == HISTORY_STROKE)
+		free(hua->stroke.points);
+	free(hua);
 }
 
 extern void

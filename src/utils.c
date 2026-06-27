@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2023 <alpheratz99@protonmail.com>
+	Copyright (C) 2023-2026 <alpheratz99@protonmail.com>
 
 	This program is free software; you can redistribute it and/or modify it
 	under the terms of the GNU General Public License version 2 as published by
@@ -48,6 +48,14 @@ xcalloc(size_t nmemb, size_t size)
 {
 	void *ptr;
 	if (NULL == (ptr = calloc(nmemb, size)))
+		die("OOM");
+	return ptr;
+}
+
+extern void *
+xrealloc(void *ptr, size_t size)
+{
+	if (NULL == (ptr = realloc(ptr, size)))
 		die("OOM");
 	return ptr;
 }

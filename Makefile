@@ -8,6 +8,7 @@ OBJ=\
 	src/canvas.o \
 	src/color.o \
 	src/picker.o \
+	src/toolbar.o \
 	src/utils.o \
 	src/history.o \
 	src/log.o

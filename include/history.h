@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2023 <alpheratz99@protonmail.com>
+	Copyright (C) 2023-2026 <alpheratz99@protonmail.com>
 
 	This program is free software; you can redistribute it and/or modify it
 	under the terms of the GNU General Public License version 2 as published by
@@ -21,21 +21,54 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef struct HistoryAtomicAction HistoryAtomicAction;
 typedef struct HistoryUserAction HistoryUserAction;
 typedef struct History History;
 
-struct HistoryAtomicAction {
-	HistoryAtomicAction *next;
+/*
+ * Each user action is stored as a single, high level description of the
+ * operation (its type and parameters), not as the list of pixels/dabs it
+ * produces. The canvas is rebuilt by replaying these operations in order.
+ */
+typedef enum {
+	HISTORY_STROKE,     /* freehand path (uses points) */
+	HISTORY_LINE,       /* uses x0,y0,x1,y1 */
+	HISTORY_RECTANGLE,  /* uses x0,y0,x1,y1,fill */
+	HISTORY_ELLIPSE,    /* uses x0,y0,x1,y1,fill */
+	HISTORY_TRIANGLE,   /* uses x0,y0,x1,y1,fill */
+	HISTORY_FILL        /* flood fill seeded at x0,y0 */
+} HistoryActionType;
+
+typedef struct {
 	int x, y;
-	uint32_t color;
-	int size;
-};
+} HistoryPoint;
 
 struct HistoryUserAction {
 	HistoryUserAction *prev;
-	HistoryAtomicAction *aa;
 	HistoryUserAction *next;
+
+	HistoryActionType type;
+	uint32_t color;
+	int size;
+
+	union {
+		/* HISTORY_STROKE */
+		struct {
+			HistoryPoint *points;
+			int npoints;
+			int cap_points;
+		} stroke;
+
+		/* HISTORY_LINE / HISTORY_RECTANGLE / HISTORY_ELLIPSE / HISTORY_TRIANGLE */
+		struct {
+			int x0, y0, x1, y1;
+			bool fill;
+		} shape;
+
+		/* HISTORY_FILL */
+		struct {
+			int x, y;
+		} bucket;
+	};
 };
 
 struct History {
@@ -49,12 +82,8 @@ history_new(void);
 extern HistoryUserAction *
 history_user_action_new(void);
 
-extern HistoryAtomicAction *
-history_atomic_action_new(int x, int y, uint32_t color, int size);
-
 extern void
-history_user_action_push_atomic(HistoryUserAction *hua,
-		HistoryAtomicAction *haa);
+history_user_action_push_point(HistoryUserAction *hua, int x, int y);
 
 extern void
 history_do(History *hist, HistoryUserAction *hua);
@@ -64,6 +93,9 @@ history_undo(History *hist);
 
 extern bool
 history_redo(History *hist);
+
+extern void
+history_user_action_destroy(HistoryUserAction *hua);
 
 extern void
 history_destroy(History *hist);
